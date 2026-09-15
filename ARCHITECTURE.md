@@ -1,0 +1,1 @@
+Modular SaaS + Self-Hosted Platform + Master Control Plane. Uses Next.js, React, TypeScript, and PostgreSQL.
