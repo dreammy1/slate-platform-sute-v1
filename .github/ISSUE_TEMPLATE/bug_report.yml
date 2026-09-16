@@ -1,0 +1,134 @@
+# =============================================================================
+# Slate Next-Gen Platform - bug report
+# Master Plan references: Section 12 (Definition of Done), Section 61
+# (observability) and Section 65 (adversarial tests). A bug report must be
+# reproducible, otherwise it cannot become a gate.
+# =============================================================================
+name: Bug report
+description: Report a defect with a reproduction, the environment and the observed evidence.
+title: '[Bug] '
+labels:
+  - type:bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a defect. Please provide a reproduction; a report
+        without one will be sent back before any code is written.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What is broken, and what should have happened instead?
+      placeholder: 'When a tenant admin opens ..., the page returns ... instead of ...'
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which platform area does the defect belong to? (Master Plan, Section 71)
+      options:
+        - area:core
+        - area:auth
+        - area:crm
+        - area:booking
+        - area:commerce
+        - area:restaurant
+        - area:hotel
+        - area:events
+        - area:projects
+        - area:builder
+        - area:plugin
+        - area:license
+        - area:control-plane
+        - area:ai
+        - area:infrastructure
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Where was this observed? (see docs/environments.md)
+      options:
+        - local (docker compose up -d)
+        - preview
+        - staging
+        - production
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Commit SHA, release tag or image digest where the defect was observed.
+      placeholder: 'e.g. c67c780 or 0.1.0'
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps. Mention required roles, tenant and plan/entitlement state.
+      placeholder: |
+        1. Sign in as ...
+        2. Create ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the exact error output. Never paste real customer data or credentials.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: How severe is the defect for a customer or for the platform?
+      options:
+        - Blocks a phase gate or a release
+        - Data loss or data corruption
+        - Cross-tenant or object-ownership exposure (security)
+        - Feature broken, workaround exists
+        - Cosmetic or documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security screening
+      description: A defect that crosses a trust boundary is handled as a security issue.
+      options:
+        - label: This can expose another tenant's or another user's data
+        - label: This can be triggered without authentication
+        - label: This involves a secret, a token or a license/entitlement bypass
+        - label: A failing adversarial test can be written for this defect
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Log records, screenshots, failing test output or CI job links. Redact secrets.
+    validations:
+      required: false
+  - type: checkboxes
+    id: dod
+    attributes:
+      label: Definition of Done for the fix (Master Plan, Section 12)
+      description: Confirm the fix is only closed when every line holds.
+      options:
+        - label: A failing test that reproduces the defect is added first
+        - label: The fix is covered by unit and, where relevant, integration tests
+        - label: Tenant isolation and object ownership are re-verified
+        - label: Documentation or release notes are updated
+        - label: CI passes and no critical/high blocker remains

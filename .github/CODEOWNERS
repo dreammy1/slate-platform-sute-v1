@@ -1,0 +1,48 @@
+# =============================================================================
+# Slate Next-Gen Platform - code owners
+# Master Plan references: Section 6 (GitHub as the source of truth),
+# Section 7 (branch and merge strategy) and Section 74 (Day-1 setup).
+# =============================================================================
+#
+# This file decides *who is requested* for review. Whether a review is required
+# before merge is enforced by branch protection, which is described in
+# docs/github-governance.md.
+#
+# Every entry currently points at the repository owner, because the single
+# human maintainer is the final authority for product, architecture, security
+# exceptions and production releases (Master Plan, Section 75). When an agent
+# role or a second maintainer gains a GitHub account, replace the handle in the
+# matching block instead of adding a new catch-all rule.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Default: nothing in this repository is owned by nobody.
+# -----------------------------------------------------------------------------
+*                       @dreammy1
+
+# -----------------------------------------------------------------------------
+# Agent F - DevOps: pipelines, containers and the environment contract.
+# -----------------------------------------------------------------------------
+/.github/               @dreammy1
+/docker-compose.yml     @dreammy1
+/docker-compose.*.yml   @dreammy1
+/.env.example           @dreammy1
+/.env.*.example         @dreammy1
+/infrastructure/        @dreammy1
+
+# -----------------------------------------------------------------------------
+# Agent A - Architect: the documents every phase gate refers to.
+# -----------------------------------------------------------------------------
+/ARCHITECTURE.md                                    @dreammy1
+/AGENTS.md                                          @dreammy1
+/DEVELOPMENT_STATE.md                               @dreammy1
+/SLATE_NEXT_GEN_PLATFORM_MASTER_DEVELOPMENT_PLAN.md @dreammy1
+/docs/                                              @dreammy1
+
+# -----------------------------------------------------------------------------
+# Agent G - Documentation / shared tooling: presets every workspace inherits,
+# so a change here has to be reviewed like a contract change.
+# -----------------------------------------------------------------------------
+/packages/config/          @dreammy1
+/packages/testing/         @dreammy1
+/packages/observability/   @dreammy1

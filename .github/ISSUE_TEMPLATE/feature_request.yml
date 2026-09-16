@@ -1,0 +1,151 @@
+# =============================================================================
+# Slate Next-Gen Platform - feature request
+# Master Plan references: Section 11 (Definition of Ready) and Section 12
+# (Definition of Done). A feature may only enter development when readiness is
+# satisfied, so the template asks for it up front.
+# =============================================================================
+name: Feature request
+description: Propose a capability with acceptance criteria, scope and test strategy.
+title: '[Feature] '
+labels:
+  - type:feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the capability, not the implementation. Ambiguity is resolved by
+        an ADR, never by a hidden assumption (Master Plan, Section 11).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which customer or platform problem does this solve? What happens today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the end state from a user's and an operator's point of view.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which platform area owns this capability? (Master Plan, Section 71)
+      options:
+        - area:core
+        - area:auth
+        - area:crm
+        - area:booking
+        - area:commerce
+        - area:restaurant
+        - area:hotel
+        - area:events
+        - area:projects
+        - area:builder
+        - area:plugin
+        - area:license
+        - area:control-plane
+        - area:ai
+        - area:infrastructure
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      description: Which phase of the roadmap does this belong to? (Master Plan, Section 28)
+      options:
+        - Phase 1 - GitHub + Infrastructure
+        - Phase 2 - Slate Core
+        - Phase 3 - Authentication + Tenancy + RBAC
+        - Phase 4 - Admin + Customer Shell
+        - Phase 5 - Plugin Engine + SDK
+        - Phase 6 - Licensing + Entitlements
+        - Phase 7 - Master Control Plane
+        - Phase 8 - CRM
+        - Phase 9 - Booking Core
+        - Phase 10 - Commerce Core
+        - Phase 11 - Restaurant
+        - Phase 12 - Hotel
+        - Phase 13 - Events + Tickets + Seats
+        - Phase 14 - Project Management
+        - Phase 15 - Forms + Media
+        - Phase 16 - Theme + Template Engine
+        - Phase 17 - Visual Website/Page Builder
+        - Phase 18 - AI Gateway
+        - Phase 19 - Marketplace
+        - Phase 20 - Remote Updates + Support
+        - Phase 21 - Security Hardening
+        - Phase 22 - Production Readiness
+        - Phase 23 - Launch
+        - Not phase-bound (infrastructure or tooling)
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and out of scope
+      description: What is included, and what is explicitly excluded? List the packages/paths allowed to change.
+      placeholder: |
+        In scope: ...
+        Out of scope: ...
+        Allowed paths: packages/..., apps/...
+    validations:
+      required: true
+  - type: textarea
+    id: readiness
+    attributes:
+      label: Readiness checklist (Master Plan, Section 11)
+      description: Answer each line, or state that it is not applicable and why.
+      value: |
+        - Data model:
+        - API behaviour:
+        - UX behaviour:
+        - Permission model:
+        - Tenant behaviour:
+        - Event/audit expectations:
+        - Dependencies identified:
+        - Feature flags required:
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable, testable statements. Each one must be verifiable.
+      placeholder: |
+        - [ ] Given ..., when ..., then ...
+        - [ ] A tenant cannot read another tenant's rows
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test strategy
+      description: Which unit, integration, E2E, migration and adversarial tests prove this works?
+      placeholder: |
+        Unit: ...
+        Integration: ... (isolated schema via @slate/testing/postgres)
+        E2E: ...
+        Adversarial (Master Plan, Section 65): ...
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Architecture references
+      description: Relevant ADRs, plan sections, API contracts or plugin contracts.
+    validations:
+      required: false
+  - type: checkboxes
+    id: dod
+    attributes:
+      label: Definition of Done acknowledgement (Master Plan, Section 12)
+      options:
+        - label: This request states the database, API, UI, permission and tenant behaviour it needs
+        - label: This request identifies the test levels that must be green
+        - label: This request has no open architectural ambiguity (or names the ADR that will resolve it)
+        - label: Documentation impact (docs/, ADR, release notes) is identified

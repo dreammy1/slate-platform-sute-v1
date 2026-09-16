@@ -1,0 +1,107 @@
+# =============================================================================
+# Slate Next-Gen Platform - dependency update automation
+# Master Plan references: Section 55 ("dependency updates", "security alerts")
+# and Section 74 (Day-1 setup: "Dependabot/Renovate").
+# =============================================================================
+#
+# Registered ecosystems:
+#   - npm            : the root manifest and therefore every workspace
+#                      (one lockfile lives at the repository root)
+#   - github-actions : the workflows in .github/workflows
+#   - docker         : the postgres image referenced by docker-compose.yml
+#
+# Two things are deliberately NOT configured here:
+#
+#   1. Dependabot *security* updates. They are a repository setting
+#      (Settings -> Code security and analysis), not an entry in this file, and
+#      they are listed in docs/github-governance.md together with the rest of
+#      the repository configuration.
+#   2. Auto-merge. Dependency pull requests walk the same seven CI gates and
+#      the same human review as every other change: no gate may be silently
+#      skipped (Master Plan, Section 2).
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  # npm - root lockfile, so one entry covers apps/* and packages/*.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    # Labels come from the taxonomy in docs/github-governance.md (Section 71).
+    labels:
+      - type:infrastructure
+      - dependencies
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+      include: scope
+    groups:
+      # One pull request for the whole lint/format toolchain: several PRs would
+      # otherwise rewrite the same lockfile and block each other.
+      tooling:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@eslint/*'
+          - 'prettier'
+          - 'typescript-eslint'
+          - 'globals'
+      typescript:
+        patterns:
+          - 'typescript'
+          - '@types/*'
+      testing:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+          - 'jsdom'
+          - 'happy-dom'
+      # Runtime dependencies of a workspace are batched separately from
+      # dev tooling, because they carry the real upgrade risk.
+      production:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions - the pinned actions inside .github/workflows.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:15'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - type:infrastructure
+      - dependencies
+    commit-message:
+      prefix: 'chore(ci)'
+      include: scope
+
+  # ---------------------------------------------------------------------------
+  # Docker - image tags in docker-compose.yml and docker-compose.staging.yml.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:30'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - type:infrastructure
+      - dependencies
+    commit-message:
+      prefix: 'chore(infra)'
+      include: scope

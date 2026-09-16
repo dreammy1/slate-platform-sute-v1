@@ -1,0 +1,153 @@
+# =============================================================================
+# Slate Next-Gen Platform - agent task
+# Master Plan, Section 10 (Agent Task Contract) and Section 8 (multi-agent team).
+#
+# Use this template for every task that is handed to an AI coding agent. The
+# contract exists so an agent can finish the task without inventing scope, and
+# so a reviewer can prove the task stayed inside its boundaries
+# (Section 7: "Agents must not modify unrelated files").
+# =============================================================================
+name: Agent task
+description: An Agent Task Contract for an AI coding agent (scope, contracts, acceptance criteria).
+title: 'SLATE-000 '
+labels:
+  - type:feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill in every field. If a field cannot be answered yet, the task is not
+        ready and belongs in architecture discussion instead (Section 11).
+  - type: input
+    id: issue-id
+    attributes:
+      label: Issue ID
+      description: Stable identifier used in branch names, commits and the project board.
+      placeholder: 'SLATE-006'
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Owning agent role
+      description: Which specialized role owns this task? (Master Plan, Section 8)
+      options:
+        - agent:architect
+        - agent:backend
+        - agent:frontend
+        - agent:qa
+        - agent:security
+        - agent:devops
+        - agent:docs
+    validations:
+      required: true
+  - type: input
+    id: goal
+    attributes:
+      label: Goal
+      description: One sentence describing the finished, verifiable outcome.
+      placeholder: 'A clean clone can start the local PostgreSQL stack and run integration tests against it.'
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What must be built or changed.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this task must not touch, so the agent never widens its own scope.
+    validations:
+      required: true
+  - type: textarea
+    id: allowed-paths
+    attributes:
+      label: Allowed files and packages
+      description: Exact paths the agent may modify. Anything else needs a new task.
+      placeholder: |
+        packages/...
+        .github/...
+        docs/...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Tasks, ADRs, packages or external services this task depends on.
+    validations:
+      required: true
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture references
+      description: ADRs and plan sections the agent must read before implementing (Master Plan, Section 67).
+    validations:
+      required: true
+  - type: textarea
+    id: contracts
+    attributes:
+      label: API, database and event contracts
+      description: Types, endpoints, tables, migrations and events this task may introduce or must preserve.
+      value: |
+        API contract:
+        Database contract (migration required: yes/no):
+        Event contract:
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security requirements
+      description: Authentication, permission, tenant isolation, object ownership, validation and logging rules.
+      value: |
+        - Never trust client-provided tenant, user, organization or object IDs (Section 13)
+        - No sensitive data in logs (Section 61)
+        - Adversarial cases to cover (Section 65):
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Testable statements; the task is done only when every line is observable.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests required
+      description: Commands the agent must run and report.
+      value: |
+        Unit:
+        Integration:
+        E2E:
+        Migration / upgrade:
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      description: Copied from Section 12 for this task; trim only what is genuinely out of scope.
+      value: |
+        - [ ] Scope implemented, nothing outside the allowed paths touched
+        - [ ] Unit tests written and green
+        - [ ] Integration tests written and green
+        - [ ] Security/adversarial checks performed
+        - [ ] Documentation updated
+        - [ ] `npm run verify` green
+        - [ ] PR opened with the verification evidence table filled in
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Agent report (filled in by the agent)
+      description: Changed files, commands run, observed results, open risks. Update this comment in place.
+    validations:
+      required: false

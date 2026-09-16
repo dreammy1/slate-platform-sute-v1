@@ -1,0 +1,23 @@
+# =============================================================================
+# Slate Next-Gen Platform - issue template chooser
+# Master Plan, Section 55 (automated GitHub operations: "issue templates").
+# =============================================================================
+#
+# Free-form issues are disabled on purpose: every task must arrive through a
+# template that carries the Agent Task Contract (Section 10) or a reproduction
+# report, because "progress" without acceptance criteria is not a gate
+# (Section 2).
+blank_issues_enabled: false
+contact_links:
+  - name: Master Development Plan
+    url: https://github.com/dreammy1/slate-platform-sute-v1/blob/main/SLATE_NEXT_GEN_PLATFORM_MASTER_DEVELOPMENT_PLAN.md
+    about: Phase roadmap, Definition of Done and the gate rules every task follows.
+  - name: Architecture contract
+    url: https://github.com/dreammy1/slate-platform-sute-v1/blob/main/ARCHITECTURE.md
+    about: Module boundaries, tenancy and deployment topology before you design a change.
+  - name: Current development state
+    url: https://github.com/dreammy1/slate-platform-sute-v1/blob/main/DEVELOPMENT_STATE.md
+    about: Which phase is open, what was last validated and what is blocked.
+  - name: GitHub governance guide
+    url: https://github.com/dreammy1/slate-platform-sute-v1/blob/main/docs/github-governance.md
+    about: Labels, milestones, branch protection and repository settings.
