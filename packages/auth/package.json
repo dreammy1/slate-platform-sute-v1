@@ -1,0 +1,33 @@
+{
+  "name": "@slate/auth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Authentication anchor and authorization spine for the Slate Next-Gen Platform: getCurrentUser, hasPermission, and the permission evaluator. See docs/phase2-agent-tasks.md (SLATE-202) and docs/adr/002-authentication-and-authorization.md.",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./user": "./src/user.ts",
+    "./permissions": "./src/permissions/index.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@slate/database": "*",
+    "kysely": "^0.29.6"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "vitest": "^5.0.1",
+    "@vitest/coverage-v8": "^5.0.1"
+  }
+}
