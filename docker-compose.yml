@@ -1,0 +1,51 @@
+# =============================================================================
+# Slate Next-Gen Platform - Local Development Infrastructure
+# Master Plan, Section 30 (Phase 1 - GitHub + Infrastructure)
+# =============================================================================
+# Start:  docker compose up -d
+# Status: docker compose ps
+# Logs:   docker compose logs -f postgres
+# Stop:   docker compose down          (keeps data volume)
+# Reset:  docker compose down -v       (DESTROYS data volume)
+#
+# Configuration is read from `.env` (see `.env.example`).
+# =============================================================================
+
+name: slate
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: slate-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-slate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slate_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-slate}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Bootstraps the isolated test database on first start.
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-slate} -d ${POSTGRES_DB:-slate}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - slate
+
+networks:
+  slate:
+    name: slate
+
+volumes:
+  postgres_data:
+    name: slate_postgres_data
