@@ -1,0 +1,30 @@
+{
+  "name": "@slate/observability",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Structured logging and error-monitoring baseline (log records, redaction, Sentry-compatible envelopes) for the Slate Next-Gen Platform monorepo.",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./errors": "./src/errors.ts",
+    "./logger": "./src/logger.ts",
+    "./monitor": "./src/monitor.ts",
+    "./redact": "./src/redact.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^5.0.1",
+    "vitest": "^5.0.1"
+  }
+}

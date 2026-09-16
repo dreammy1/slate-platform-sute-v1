@@ -1,0 +1,12 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "display": "Slate Observability Package",
+  "compilerOptions": {
+    // Same reason as @slate/testing: relative imports carry explicit `.ts`
+    // extensions, so the package stays loadable by Vite's native config loader
+    // and by the Vitest presets it consumes as TypeScript source.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "*.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}
