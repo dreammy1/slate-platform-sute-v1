@@ -1,7 +1,36 @@
 # Current Status
 
 - Current Phase: Phase 2 (Slate Core)
-- Last Completed Task: Closed Phase 1 (GitHub + Infrastructure). Finished and validated `@slate/observability`: a pure, injectable environment contract (`env.ts` - `SLATE_ENV`/`SLATE_SERVICE`/`LOG_LEVEL`/`LOG_FORMAT`/`SENTRY_*` readers that throw on invalid values instead of falling back silently), a structured logger (`logger.ts` - fixed record shape `level/time/msg/service/environment/release`, level filtering, reserved-field protection, `child()` bindings, json/pretty formats, stdout/stderr default sink, injectable sink and clock), two-layer redaction (`redact.ts` - sensitive-key replacement plus content scrubbing of messages/stacks, depth/array/cycle bounds, JSON-safe output without mutating the input), bounded error serialization (`errors.ts` - cause chain capped at depth 5) and a vendor-free error monitor (`monitor.ts` - public Sentry envelope protocol over injectable `fetch`, startup-throwing DSN parser, 50-frame stacks, fire-and-forget sending that never throws into the app, 20-event pending cap, timeout-aware `flush`, disabled modes that explain themselves). The package ships 5 unit test files / 80 tests and passes the full repo gate. Also added the production-like compose overlay (`docker-compose.staging.yml`: loopback-only database port via `!override`, per-deployment volume/network names, memory ceiling, graceful stop, bounded log rotation) serving both staging and per-pull-request preview stacks, the `.env.staging.example`/`.env.preview.example` templates, the `docker:*` npm scripts, the GitHub governance set (`.github/CODEOWNERS`, `dependabot.yml`, agent-task/bug-report/feature-request issue templates, pull-request template) and the documentation (`docs/environments.md`, `docs/observability.md`, `docs/github-governance.md` referenced by CODEOWNERS, Dependabot and the templates).
-- Next Task: Open Phase 2 - Slate Core (Master Plan, Section 31): database layer, repositories, tenant context, services, API, events, settings, audit, notifications, media, permissions and feature flags, gated by Organization → User → Permission → Tenant record → API → UI → Audit → Tests. First step: slice the phase into Agent Task Contracts (issue id, scope, out of scope, allowed paths, contracts, acceptance criteria) and decide the database/query toolkit in an ADR before writing code, keeping the observability baseline wired in from the first service.
-- Validation: `npm run verify` (format:check -> lint -> typecheck -> test:unit -> test:integration -> build) exits 0 end to end: Prettier is clean across the repo including `docs/`, ESLint is clean, the root config and every workspace typecheck, the unit suites are 8 files / 103 tests passing (`@slate/observability` 5 files / 80 tests, `@slate/testing` 3 files / 23 tests), and the build gate runs `--if-present` (no workspace emits a build yet). The Docker daemon is now available: `docker compose up -d` runs `slate-postgres` (postgres:16-alpine, healthy), the integration suite is 5 tests that pass against the live `slate_test` database via `TEST_DATABASE_URL`, and `npm run docker:config:staging` renders the base + overlay stack with the committed example file.
-- Blockers: None. All work is committed locally on `main`; the commits are not pushed to `origin` yet, so the first green CI run on GitHub is still pending.
+- Last Completed Task: Closed Phase 1 (GitHub + Infrastructure) and began Phase 2
+  planning/prework. Fixed the CI install job by regenerating `package-lock.json`
+  so the `@slate/observability@0.1.0` workspace resolves (SLATE-200's sibling,
+  the lockfile was stale from the Phase 1 commits), and restricted Dependabot's
+  TypeScript updates to `update-types: ['major']` in `.github/dependabot.yml` to
+  keep the `typescript-eslint@8.70.0` engine constraint (`typescript >=4.8.4
+<6.1.0`) honest while still accepting 6.x patches. Delivered the Phase 2
+  planning artifacts: `docs/adr/001-database-query-toolkit.md` (Accepted —
+  **Kysely on `pg`** as the strict-TypeScript-native, SQL-first, `onQuery`
+  instrumentable database abstraction) and `docs/phase2-agent-tasks.md` (four
+  Agent Task Contracts — SLATE-200 database abstraction, SLATE-201 tenant +
+  organization context & isolation, SLATE-202 user + role + permission model &
+  authz, SLATE-203 tenant-aware API scaffold + audit + event bus — each with
+  scope/out-of-scope, allowed paths, contracts and acceptance criteria, linked
+  to the `docs/adr/001-database-query-toolkit.md` decision).
+- Next Task: Execute **SLATE-200** (Agent Task Contract, issue id placeholder,
+  `agent:backend`): create `packages/database`, install `kysely` + `@types/pg`
+  (reusing the `pg` already in `@slate/testing`), stand up the `Kysely<Database>`
+  connection factory reading `DATABASE_URL`/`DIRECT_URL`, author the Phase 2
+  migrations as raw SQL in `packages/database/src/migrations/`
+  (`organization`, `tenant`, `tenant_membership`, `app_user`, `role`,
+  `permission`, `role_permission`, `audit_log`), build the `db(tenantId)`
+  tenant-scoped query helper, and wire `onQuery` logging through
+  `@slate/observability` with `redactValue`+`scrubSecrets` so no parameter value
+  reaches the sink in plaintext. Gate in-flight: Tenant record. Do not begin
+  SLATE-201 until SLATE-200 is green in an isolated schema.
+- Validation: `npm run verify` passes end to end — `format:check` (Prettier clean
+  incl. the new docs), `lint` (0 errors), `typecheck` (0 errors), `test:unit`
+  (23 passed), `test:integration` (5 passed against the live `slate-postgres`
+  container via `TEST_DATABASE_URL`), `build` (0 errors).
+- Blockers: None. Commits are local on `main` (ahead of `origin/main`); not yet
+  pushed, so the first green CI run on GitHub following the dependabot/lockfile
+  fix is pending.
