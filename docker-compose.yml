@@ -24,17 +24,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-slate}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Bootstraps the isolated test database on first start.
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-slate} -d ${POSTGRES_DB:-slate}",
-        ]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-slate} -d ${POSTGRES_DB:-slate}']
       interval: 10s
       timeout: 5s
       retries: 5

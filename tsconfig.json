@@ -1,0 +1,4 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "files": []
+}

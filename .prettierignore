@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+.next/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Generated lockfiles
+package-lock.json
+
+# Environment files (no Prettier parser)
+.env*
+
+# Canonical planning documents, maintained in their original formatting
+SLATE_NEXT_GEN_PLATFORM_MASTER_DEVELOPMENT_PLAN.md
+
+# Repository placeholders
+*.gitkeep
