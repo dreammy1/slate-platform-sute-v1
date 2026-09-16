@@ -69,7 +69,14 @@ updates:
         update-types:
           - minor
           - patch
-
+    # typescript-eslint@8 declares `typescript >=4.8.4 <6.1.0`; a 7.x release
+    # would resolve to an out-of-range install and break the install CI job
+    # with ERESOLVE. typescript stays in this ignore until the engine guard
+    # is lifted (Master Plan, Section 55). `update-types: major` blocks the
+    # 6.x -> 7.x jump (the current 6.0.x line still receives minor/patch PRs).
+    ignore:
+      - dependency-name: 'typescript'
+        update-types: ['major']
   # ---------------------------------------------------------------------------
   # GitHub Actions - the pinned actions inside .github/workflows.
   # ---------------------------------------------------------------------------
@@ -87,7 +94,6 @@ updates:
     commit-message:
       prefix: 'chore(ci)'
       include: scope
-
   # ---------------------------------------------------------------------------
   # Docker - image tags in docker-compose.yml and docker-compose.staging.yml.
   # ---------------------------------------------------------------------------
