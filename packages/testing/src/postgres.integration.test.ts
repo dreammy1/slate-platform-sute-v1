@@ -11,13 +11,20 @@ import { connectWithSchema, createIsolatedDatabase, dropSchema } from './postgre
  */
 const describeIntegration = describe.skipIf(!integrationEnabled());
 
+/**
+ * Fixture for the suite. A parameterless `query()` call runs through the
+ * simple-query protocol, so several statements may be batched into one string —
+ * but then every statement has to be terminated with a semicolon, otherwise
+ * Postgres parses the whole buffer as one command and fails at the next keyword
+ * (`syntax error at or near "CREATE"` for the index below).
+ */
 const SETUP_SQL = [
   'CREATE TABLE widgets (',
   '  id serial PRIMARY KEY,',
   '  name text NOT NULL,',
   '  quantity integer NOT NULL DEFAULT 0',
-  ')',
-  'CREATE UNIQUE INDEX widgets_name_key ON widgets (name)',
+  ');',
+  'CREATE UNIQUE INDEX widgets_name_key ON widgets (name);',
 ].join('\n');
 
 describeIntegration('isolated PostgreSQL harness', () => {
