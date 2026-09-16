@@ -1,0 +1,226 @@
+# =============================================================================
+# Slate Next-Gen Platform - Continuous Integration
+# Master Plan, Section 30 (Phase 1 - GitHub + Infrastructure):
+#
+#   install -> lint -> typecheck -> unit -> integration -> build -> security
+#
+# Every stage is a separate job chained with `needs`, so the pipeline can only
+# advance when the previous gate passed - exactly the phase-gate rule from
+# Master Plan, Section 2 ("One phase must be finished before the next phase
+# starts"). The integration stage runs against a real PostgreSQL service
+# container on the isolated database from `TEST_DATABASE_URL`, never against
+# `DATABASE_URL` and never against a mock.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# A newer push/PR supersedes the run that is still in flight for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Matches the engines range in the root package.json ("^22.13.0 || >=24.0.0").
+  NODE_VERSION: '24'
+  # Read by the shared presets (GitHub reporter, "no silent skips" guard).
+  CI: 'true'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. install - prove a clean clone installs from the lockfile alone.
+  # ---------------------------------------------------------------------------
+  install:
+    name: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      # `--no-audit`: dependency auditing is a dedicated gate in the `security`
+      # stage, so an advisory never fails two stages at once.
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Report toolchain versions
+        run: |
+          node --version
+          npm --version
+
+  # ---------------------------------------------------------------------------
+  # 2. lint - ESLint plus the formatting gate (Phase 1: "lint", "formatting").
+  # ---------------------------------------------------------------------------
+  lint:
+    name: lint
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check formatting (Prettier)
+        run: npm run format:check
+      - name: Lint (ESLint)
+        run: npm run lint
+
+  # ---------------------------------------------------------------------------
+  # 3. typecheck - `tsc --noEmit` for the root config and every workspace.
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: typecheck
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+
+  # ---------------------------------------------------------------------------
+  # 4. unit - hermetic unit tests, no external services required.
+  # ---------------------------------------------------------------------------
+  unit:
+    name: unit
+    needs: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run unit tests
+        run: npm run test:unit
+
+  # ---------------------------------------------------------------------------
+  # 5. integration - isolated PostgreSQL integration tests.
+  # ---------------------------------------------------------------------------
+  integration:
+    name: integration
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # The same PostgreSQL version as docker-compose.yml. `POSTGRES_DB` creates
+      # the isolated `slate_test` database that
+      # infrastructure/postgres/init/01-init-databases.sql provisions locally,
+      # and the health check reuses the compose command verbatim.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: slate
+          POSTGRES_PASSWORD: slate_dev_password
+          POSTGRES_DB: slate_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U slate -d slate_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+    env:
+      # Only the test database is exposed to this job. Integration suites never
+      # read DATABASE_URL, and the harness isolates every suite in its own
+      # schema (see @slate/testing/postgres).
+      TEST_DATABASE_URL: postgresql://slate:slate_dev_password@localhost:5432/slate_test?schema=public
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      # Fails hard when TEST_DATABASE_URL is missing: skipping integration
+      # coverage is never allowed to look like a green pipeline.
+      - name: Run integration tests
+        run: npm run test:integration
+
+  # ---------------------------------------------------------------------------
+  # 6. build - production build of every workspace that has one.
+  # ---------------------------------------------------------------------------
+  build:
+    name: build
+    needs: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      # No workspace emits a build yet: the root script is `--if-present`, so
+      # this gate activates the moment the first app or library ships one.
+      - name: Build
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # 7. security - dependency audit plus committed-secret scanning.
+  # ---------------------------------------------------------------------------
+  security:
+    name: security
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Full history: the secret scan walks the commits in the push/PR range.
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Audit dependencies (fail on high/critical)
+        run: npm audit --audit-level=high
+      - name: Scan for committed secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

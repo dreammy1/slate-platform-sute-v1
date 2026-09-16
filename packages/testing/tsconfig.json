@@ -1,0 +1,12 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "display": "Slate Testing Package",
+  "compilerOptions": {
+    // Relative imports in this workspace carry explicit `.ts` extensions so the
+    // presets stay loadable by Vite's native config loader, which will become
+    // the default in a future major version (today it only warns).
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "vitest", "*.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}

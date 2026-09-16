@@ -1,0 +1,41 @@
+{
+  "name": "@slate/testing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Vitest presets and test harness (unit + isolated PostgreSQL integration) for the Slate Next-Gen Platform monorepo.",
+  "type": "module",
+  "files": [
+    "src",
+    "vitest"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./integration-setup": "./src/integration-setup.ts",
+    "./paths": "./src/paths.ts",
+    "./postgres": "./src/postgres.ts",
+    "./vitest/base": "./vitest/base.ts",
+    "./vitest/unit": "./vitest/unit.ts",
+    "./vitest/integration": "./vitest/integration.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "pg": "^8.23.0"
+  },
+  "peerDependencies": {
+    "vitest": "^5.0.1"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.23.1",
+    "@vitest/coverage-v8": "^5.0.1",
+    "vitest": "^5.0.1"
+  }
+}
