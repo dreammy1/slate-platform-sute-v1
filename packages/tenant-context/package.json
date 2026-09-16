@@ -1,0 +1,37 @@
+{
+  "name": "@slate/tenant-context",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Request-scoped tenant context for the Slate Next-Gen Platform monorepo: principal/header resolution, per-request search_path scoping, owning-organization lookup and tenant.selected events. See docs/phase2-agent-tasks.md (SLATE-201).",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./context": "./src/context.ts",
+    "./database": "./src/database.ts",
+    "./events": "./src/events.ts",
+    "./organization": "./src/organization.ts",
+    "./principal": "./src/principal.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@slate/database": "*",
+    "@slate/observability": "*",
+    "kysely": "^0.29.6"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.6.11",
+    "@vitest/coverage-v8": "^5.0.1",
+    "vitest": "^5.0.1"
+  }
+}

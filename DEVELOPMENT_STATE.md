@@ -1,53 +1,53 @@
 # Current Status
 
 - Current Phase: Phase 2 (Slate Core)
-- Last Completed Task: Executed **SLATE-200** (database abstraction) per
-  `docs/phase2-agent-tasks.md` and `docs/adr/001-database-query-toolkit.md`.
-  Created the `packages/database` workspace (`@slate/database`) with `kysely`
-  - `pg` (runtime) and `@types/pg` (types) — `@slate/observability` moved from
-    dev to runtime dependencies because the query logger consumes it. Shipped:
-    `src/env.ts` (`DATABASE_URL`/`DIRECT_URL` readers that validate the URL and
-    throw at startup on anything malformed, echoing only `scrubSecrets`-sanitized
-    values), `src/types.ts` (typed column interfaces + the `Kysely` `Database`
-    map for the 8 Phase 2 tables plus the `slate_migrations` ledger),
-    `src/client.ts` (`createDatabase()` factory on a `pg` Pool: TLS outside
-    local environments — staging/preview/production, optional `searchPath`
-    scoping, and the `onQuery` listener via Kysely 0.29's `log(event)` surface
-    emitting at `debug` through `@slate/observability` with every bound parameter
-    run through `redactValue`+`scrubSecrets` so no plaintext secret reaches the
-    sink), `src/migrations/` (4 raw, dependency-ordered `.sql` files —
-    `0001_organization_and_tenant`, `0002_app_user`, `0003_roles_and_permissions`,
-    `0004_tenant_membership_and_audit_log` — split on
-    `--> statement-breakpoint` lines) with a loader and `src/runner.ts`
-    (`runMigrations` ledger + sha256 checksum drift detection,
-    `runMigrationsFromEnv` over `DIRECT_URL`), and `src/tenant.ts`
-    (`createTenantDatabase(db, tenantId)`: UUID-validated scope, forced
-    `where tenant_id =` on selects/updates/deletes, `tenant_id` injection on
-    inserts with foreign-id rejection via `TenantScopeError`; scope covers only
-    `TenantOwnedTable`s — `tenant_membership`, `role`, `permission`,
-    `audit_log`). Tests: 48 unit (hermetic — env parsing, redacted query
-    logging against an injected sink, tenant scoping compiled against Kysely's
-    DummyDriver, migration file integrity) + 6 integration against the live
-    `slate-postgres` container via `@slate/testing/postgres`
-    `createIsolatedDatabase` (migration execution + ledger idempotency, table
-    presence, tenant A/B isolation, foreign-tenant rejection, secret-free debug
-    query logs). Repo-wide: 151 unit + 11 integration tests green. Housekeeping:
-    `*.sql` added to `.prettierignore` (no Prettier SQL parser), package
-    lockfile resynced for the dependency move.
-- Next Task: Execute **SLATE-201** (tenant + organization context &
-  isolation, `agent:backend`): resolve the tenant from the authenticated
-  principal or an `X-Tenant-Id` header (never from the client alone),
-  inject it into `createTenantDatabase(db, tenantId)` from SLATE-200, add
-  `search_path`-per-request scoping and the `organization` row that owns the
-  tenant, and emit `tenant.selected` with `{ tenantId, organizationId }`.
-  Tests must prove tenant A cannot read tenant B's rows and that a foreign
-  `X-Tenant-Id` is rejected at the context layer (403) before any query.
+- Last Completed Task: Executed **SLATE-201** (tenant + organization context &
+  isolation) per `docs/phase2-agent-tasks.md`, on top of SLATE-200. Created the
+  `packages/tenant-context` workspace (`@slate/tenant-context`):
+  `src/principal.ts` (`AuthenticatedPrincipal` — server-derived `userId`,
+  session-authorized `tenantIds`, session-bound `activeTenantId`; the
+  `x-tenant-id` header constant), `src/context.ts` (`resolveTenantContext()`
+  — a pure resolver returning a discriminated result: **401** when
+  unauthenticated or when no tenant is resolvable, **403** when the header
+  names a tenant outside the session's authorized set, disagrees with the
+  session's active tenant, or is malformed; **200** with a validated
+  `TenantContext` otherwise — plus `assertTenantContext()` throwing
+  `TenantContextError` with the HTTP status; rejection happens _before any
+  query can be issued_ because the resolver never touches the database),
+  `src/database.ts` (`createRequestDatabase()` — per-request root client with
+  `search_path` pinned to one validated schema and `tenantId`/`requestId`
+  bound to the query logger; `tenantDatabaseFor(db, context)` — injects the
+  resolved tenant into `createTenantDatabase` from `@slate/database`),
+  `src/organization.ts` (`resolveTenantOrganization()` — tenant ⨝
+  organization lookup for the owning organization row; a tenant without one
+  fails loudly), and `src/events.ts` (`emitTenantSelected()` — emits
+  `tenant.selected` with `{ tenantId, organizationId }` at `info` through the
+  `@slate/observability` logger, so the redaction layer applies). A small
+  `@slate/database` addition: `isValidTenantId()` exported for non-throwing
+  callers. Tests: 19 unit (hermetic 401/403 matrix incl. the Section 65
+  adversarial case, scoped-query compilation via Kysely's DummyDriver,
+  event-record assertions) + 8 integration in an isolated schema via
+  `@slate/testing/postgres`: tenant A's rows are invisible to tenant B's
+  scope; a foreign `X-Tenant-Id` is rejected with 403 at the context layer
+  with the query-log record count unchanged (proof no query was issued);
+  owning-organization resolution (including the missing-row failure);
+  `tenant.selected` payload verified on the captured sink; request
+  `search_path` pinning with `tenantId`/`requestId` on every query record.
+  Repo-wide: 170 unit + 19 integration tests green.
+- Next Task: Execute **SLATE-202** (user + role + permission model &
+  authorization, `agent:backend` + `agent:security`): the permission
+  evaluator returning the permission set for a user in a tenant (incl.
+  object-ownership lookups), the `authn`/`authz` contract API routes consult,
+  and the security ADR for password hashing specifics. Gate in-flight:
+  **Organization → User → Permission**. Do not begin SLATE-203 until
+  SLATE-202 is green.
 - Validation: `npm run verify` passes end to end — `format:check` (Prettier
   clean incl. the new package), `lint` (0 errors), `typecheck` (0 errors),
-  `test:unit` (151 passed: 48 `@slate/database` + 80 `@slate/observability` +
-  23 `@slate/testing`), `test:integration` (11 passed against the live
-  `slate-postgres` container via `TEST_DATABASE_URL`: 6 `@slate/database` +
-  5 `@slate/testing`), `build` (0 errors).
+  `test:unit` (170 passed: 48 `@slate/database` + 80 `@slate/observability` +
+  19 `@slate/tenant-context` + 23 `@slate/testing`), `test:integration` (19
+  passed against the live `slate-postgres` container via `TEST_DATABASE_URL`:
+  6 `@slate/database` + 8 `@slate/tenant-context` + 5 `@slate/testing`),
+  `build` (0 errors).
 - Blockers: None. Commits are local on `main` (ahead of `origin/main`); not
   yet pushed, so the first green CI run on GitHub following the
   dependabot/lockfile fix is pending.

@@ -46,6 +46,14 @@ export class TenantScopeError extends Error {
 const TENANT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Non-throwing tenant-id check for callers that need a result instead of an
+ * exception (the context resolver maps an invalid id to a 403, for example).
+ */
+export function isValidTenantId(tenantId: string): boolean {
+  return TENANT_ID_PATTERN.test(tenantId.trim());
+}
+
+/**
  * Validates a tenant id. Kept strict on purpose: the id ends up inside a SQL
  * predicate on every scoped query, so only the canonical shape may pass.
  *
@@ -53,7 +61,7 @@ const TENANT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
  */
 export function assertTenantId(tenantId: string): string {
   const candidate = tenantId.trim();
-  if (!TENANT_ID_PATTERN.test(candidate)) {
+  if (!isValidTenantId(candidate)) {
     throw new TenantScopeError(
       `"${candidate.slice(0, 64)}" is not a valid tenant id: expected a UUID.`,
     );
