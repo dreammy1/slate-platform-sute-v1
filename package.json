@@ -10,6 +10,12 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v",
+    "docker:ps": "docker compose ps",
+    "docker:logs": "docker compose logs -f postgres",
+    "docker:config:staging": "docker compose --env-file .env.staging.example -f docker-compose.yml -f docker-compose.staging.yml config --quiet",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -1,0 +1,66 @@
+# =============================================================================
+# Slate Next-Gen Platform - production-like overlay (staging + preview)
+# Master Plan, Section 30 (Phase 1: "staging", "preview builds") and
+# Section 53 (release path: ... -> Staging -> Smoke Test -> ...).
+# =============================================================================
+# This file is an *overlay*: it never replaces docker-compose.yml, it refines
+# it. Local development therefore keeps using the exact same service definition
+# that staging deploys, so the two stacks cannot drift apart.
+#
+#   Local development:
+#     docker compose up -d
+#
+#   Staging (production-like, on the staging host):
+#     docker compose --env-file .env.staging \
+#       -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+#   Preview (isolated stack per pull request):
+#     docker compose --env-file .env.preview \
+#       -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+#   Validate the rendering without starting anything:
+#     docker compose --env-file .env.staging.example \
+#       -f docker-compose.yml -f docker-compose.staging.yml config --quiet
+#
+# Every deployment-specific value is variable-driven (see .env.staging.example,
+# .env.preview.example and docs/environments.md), so one overlay serves both
+# environments and a preview stack can never collide with staging.
+# =============================================================================
+
+services:
+  postgres:
+    restart: always
+
+    # The `!override` tag replaces the base list instead of appending to it:
+    # staging and preview must NOT inherit the 0.0.0.0 binding that local
+    # development uses. The database is reachable from the deployment host
+    # (loopback by default) and never from the public internet.
+    ports: !override
+      - '${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_HOST_PORT:-55432}:5432'
+
+    # A checkpoint or a long-running statement must not be cut off mid-flight.
+    stop_grace_period: 60s
+
+    # Predictable ceiling: a runaway query cannot take the whole host down.
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+
+    # Logging baseline (Master Plan, Section 61): container logs stay bounded
+    # and rotated, and carry no application context - structured application
+    # logs come from @slate/observability (see docs/observability.md).
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+networks:
+  slate:
+    # Preview stacks override this with a per-pull-request name so two previews
+    # can never resolve each other's services.
+    name: ${SLATE_NETWORK_NAME:-slate_staging}
+
+volumes:
+  postgres_data:
+    # Same reasoning: staging keeps a persistent volume, every preview gets its
+    # own disposable one.
+    name: ${POSTGRES_VOLUME_NAME:-slate_staging_postgres_data}
