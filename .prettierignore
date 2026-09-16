@@ -21,3 +21,7 @@ SLATE_NEXT_GEN_PLATFORM_MASTER_DEVELOPMENT_PLAN.md
 
 # Repository placeholders
 *.gitkeep
+
+# Raw SQL (no Prettier SQL parser); migrations are hand-audited, see
+# packages/database/src/migrations/
+*.sql

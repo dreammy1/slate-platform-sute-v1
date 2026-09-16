@@ -1,0 +1,12 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "display": "Slate Database Package",
+  "compilerOptions": {
+    // Relative imports carry explicit `.ts` extensions, so this package is
+    // loadable by Vite's native config loader and by the Vitest presets it
+    // consumes as TypeScript source — same convention as @slate/observability.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "*.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}
