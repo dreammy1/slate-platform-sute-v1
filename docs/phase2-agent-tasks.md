@@ -19,7 +19,9 @@ green (Section 2: one phase finishes before the next starts).
 
 Architecture reference: [`docs/adr/001-database-query-toolkit.md`](adr/001-database-query-toolkit.md)
 selects **Kysely on `pg`** as the database abstraction. Every downstream task
-assumes that decision.
+assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr/003-system-settings-and-feature-flags.md)
+(Proposed) gates SLATE-204 and must be accepted before that task starts
+(Section 67).
 
 > Issue IDs use the `SLATE-200` series for Phase 2. They are placeholders for
 > the real GitHub issues created from this plan; branch names follow
@@ -27,12 +29,13 @@ assumes that decision.
 
 ## Task index
 
-| Issue     | Agent                          | Capability                                                            | Gate link                    |
-| --------- | ------------------------------ | --------------------------------------------------------------------- | ---------------------------- |
-| SLATE-200 | agent:backend                  | database abstraction (Kysely, `pg`, migrations, tenant-scoped helper) | Tenant record                |
-| SLATE-201 | agent:backend                  | tenant + organization context & isolation                             | Organization → Tenant record |
-| SLATE-202 | agent:backend + agent:security | user + role + permission model & authz                                | User → Permission            |
-| SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests          |
+| Issue     | Agent                          | Capability                                                            | Gate link                         |
+| --------- | ------------------------------ | --------------------------------------------------------------------- | --------------------------------- |
+| SLATE-200 | agent:backend                  | database abstraction (Kysely, `pg`, migrations, tenant-scoped helper) | Tenant record                     |
+| SLATE-201 | agent:backend                  | tenant + organization context & isolation                             | Organization → Tenant record      |
+| SLATE-202 | agent:backend + agent:security | user + role + permission model & authz                                | User → Permission                 |
+| SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests               |
+| SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit |
 
 ---
 
@@ -171,17 +174,98 @@ assumes that decision.
   **Organization → User → Permission → Tenant record → API → Audit → Tests**
   is exercised green in an isolated schema, and `npm run verify` is clean.
 
+## SLATE-204 — System settings & feature flags
+
+- **Owning agent:** `agent:backend` + `agent:security` (co-owners)
+- **Milestone:** M2 Core
+- **Dependencies:** SLATE-200, SLATE-201, SLATE-202, SLATE-203
+- **Architecture reference:** `docs/adr/003-system-settings-and-feature-flags.md`
+  — must be read (Section 67) and **accepted** before implementation begins.
+- **Scope:** The tenant-scoped configuration store and the server-authoritative
+  flag resolver. Extend the SLATE-200 migration with two tenant-owned tables
+  (`system_setting`, `feature_flag`), register both in `TENANT_OWNED_TABLES`
+  and the typed schema map, and create `packages/settings` (`@slate/settings`):
+  the dotted-key validator, typed value round-tripping
+  (`string | number | boolean | json`), `getSetting` / `setSetting` through
+  `db(tenantId)`, the code-owned flag definition registry, and
+  `resolveFeatureFlag` / `resolveFeatureFlags` (`tenant override → registry
+default → false` for an unknown key). Extend the SLATE-203 API with
+  `GET /settings`, `PUT /settings/:key`, `GET /features`, `PUT /features/:key`
+  on the existing chain (context → authz → `db(tenantId)` → audit → events),
+  seed `settings.read` / `settings.write` / `features.read` / `features.write`,
+  write exactly one attributed `audit_log` row per accepted write inside the
+  transaction, and publish `settings.updated` / `feature.flag.updated` after
+  commit. Gate in-flight: **Configuration → Isolation → Audit**. Update the
+  committed OpenAPI stub.
+- **Out of scope:** flag targeting rules (per-user flags, percentage rollout,
+  scheduling, experiments); entitlement/licence gating (Phase 6 — Section 60
+  forbids a flag becoming the entitlement check); plugin-registered settings
+  (`registerSettings()`, Phase 5); settings/flag UI (Phase 4 shell); secret
+  storage/KMS; caching of resolved values.
+- **Allowed files/packages:** `packages/settings/` (new), `packages/database/`,
+  `packages/api/`, `packages/auth/` (test seeding only), `packages/testing/`
+  (test only), `docs/adr/003-*.md`, `docs/phase2-agent-tasks.md`,
+  `DEVELOPMENT_STATE.md`.
+- **Contracts:**
+  - Database contract (migration required: yes):
+    `system_setting (id, tenant_id NOT NULL, key, value_type, value jsonb,
+created_at, updated_at)` and `feature_flag (id, tenant_id NOT NULL, key,
+enabled boolean NOT NULL, created_at, updated_at)`, each with a unique
+    `(tenant_id, key)` index and both added to `TENANT_OWNED_TABLES`; no column
+    nullable where the tenant id is required. Migration + clean-install +
+    upgrade coverage per Section 57.
+  - API contract: `GET /settings` → `{ settings: [{ key, value, valueType }] }`;
+    `PUT /settings/:key` → `{ setting }`; `GET /features` →
+    `{ features: { [key]: boolean } }`; `PUT /features/:key` →
+    `{ key, enabled }`. Errors keep the SLATE-203 shape and statuses
+    (401/403 before any query, 400 for an invalid key/value, 500 with rollback).
+    The OpenAPI stub in `packages/api/openapi.json` is updated in the same PR.
+  - Event contract: `settings.updated` and `feature.flag.updated`, payload
+    `{ tenantId, key, actorUserId }`, published after commit — never the value.
+- **Security requirements:**
+  - Section 13: the tenant comes from the resolved context; `X-Tenant-Id` alone
+    is never trusted and a client cannot supply `enabled` or a tenant id.
+  - Section 60: flags are server-authoritative; an unknown key resolves to
+    `false` and never throws.
+  - Section 65 adversarial: tenant A cannot read or write tenant B's rows; a
+    member without `settings.write` / `features.write` receives 403 with no
+    write, no audit row and no event; a permission revoked mid-session is
+    effective on the very next call (no caching).
+  - Section 61: values pass through the logger's redaction layer; events carry
+    keys, not values.
+- **Acceptance criteria:**
+  - Given settings written for tenant A, when tenant B calls `GET /settings`,
+    then no tenant A row is visible.
+  - Given a defined flag with no override, when `GET /features` is called, then
+    the registry default is returned; given a never-defined key, then `false`.
+  - Given a member without the matching permission, when `PUT /features/:key`
+    is called, then 403 and no row, no audit and no event.
+  - Given `PUT /settings/:key`, then exactly one tenant/user-attributed
+    `audit_log` row commits with the write and `settings.updated` is delivered
+    only after commit.
+  - Integration test runs in an isolated schema via `@slate/testing/postgres`.
+- **Tests required:** unit (key/value validation, typed round-trip, resolution
+  order incl. the unknown-key fail-closed case, fake-based isolation of the
+  query service) + integration (isolation in both directions, permission
+  denial, the audit row, rollback when the mandatory audit insert fails, and a
+  live permission revocation observed on the next call).
+- **Definition of Done:** the four routes are green end to end in an isolated
+  schema with ADR 003 accepted and `npm run verify` clean (Section 64), and no
+  required Section 68 cell (API / DB / Permission / Tenant / Events / Tests /
+  Docs) is left unchecked.
+
 ---
 
 ## Planning artifact map
 
-| Phase 2 capability (Section 15)                                                                               | First task                    |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `database abstraction`                                                                                        | SLATE-200 (Kysely — ADR 001)  |
-| `tenants`, `organizations`                                                                                    | SLATE-201                     |
-| `users`, `roles`, `permissions`                                                                               | SLATE-202                     |
-| `API`, event bus                                                                                              | SLATE-203                     |
-| `audit`, `notifications`, `media`, `jobs`, `settings`, `feature flags`, `search abstraction`, `health checks` | SLATE-204+ (post-ADR backlog) |
+| Phase 2 capability (Section 15)                                                  | First task                    |
+| -------------------------------------------------------------------------------- | ----------------------------- |
+| `database abstraction`                                                           | SLATE-200 (Kysely — ADR 001)  |
+| `tenants`, `organizations`                                                       | SLATE-201                     |
+| `users`, `roles`, `permissions`                                                  | SLATE-202                     |
+| `API`, event bus                                                                 | SLATE-203                     |
+| `audit`, `notifications`, `media`, `jobs`, `search abstraction`, `health checks` | SLATE-205+ (post-ADR backlog) |
+| `settings`, `feature flags`                                                      | SLATE-204 (ADR 003)           |
 
 > `authentication` is intentionally owned by SLATE-202 (authn is the prerequisite
 > to authorizing a user); `plugin runtime`, `license verification`, `theme

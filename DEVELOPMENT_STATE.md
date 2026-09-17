@@ -31,28 +31,34 @@
   anonymous 401). Established:
   **Organization → User → Permission → Tenant record → API → Audit → Tests**
   is exercised green end to end in an isolated schema.
-- Next Task: Phase 2 is **not** complete. Master Plan Section 31 still lists
-  `repositories`, `services`, `settings`, `notifications`, `media`, feature
-  flags and the gate's `UI` step as Phase 2 scope, and the Section 31 gate
-  only closes on the real UI integration (Phase 4). Ordered follow-ups after
-  this backend milestone: (1) the SLATE-204+ backlog in
-  `docs/phase2-agent-tasks.md` (`audit` surface, `settings`, `notifications`,
-  `media`, `jobs`, `feature flags`, `search abstraction`, `health checks`),
-  each gated behind its own ADR, then (2) Phase 3
-  (authentication/tenancy/RBAC flows). The `X-Tenant-Id`-header-only route
-  shape and the `:tenantSlug` route variant named in the SLATE-203 API
-  contract are also still unimplemented.
+- Next Task: Execute **SLATE-204** (system settings & feature flags,
+  `agent:backend` + `agent:security`) under `packages/settings`
+  (`@slate/settings`), specified in `docs/phase2-agent-tasks.md` and gated
+  behind `docs/adr/003-system-settings-and-feature-flags.md` (**Proposed** — it
+  must be accepted before implementation begins, Section 67). Scope: two new
+  tenant-owned tables (`system_setting`, `feature_flag`) added to the SLATE-200
+  migration and `TENANT_OWNED_TABLES`; dotted-key, type-preserving settings
+  reads and writes through `db(tenantId)`; a code-owned flag definition
+  registry resolved server-side as `tenant override → registry default → false`
+  for an unknown key; four new routes on the SLATE-203 chain (`GET /settings`,
+  `PUT /settings/:key`, `GET /features`, `PUT /features/:key`) with seeded
+  `settings.read` / `settings.write` / `features.read` / `features.write`
+  permissions, one attributed `audit_log` row per write, and
+  `settings.updated` / `feature.flag.updated` published after commit; the
+  OpenAPI stub updated in the same change. Gate in-flight:
+  **Configuration → Isolation → Audit**. Phase 2 itself stays open: Master Plan
+  Section 31 also lists `repositories`, `services`, `notifications`, `media` and
+  the gate's `UI` step (Phase 4), and the `audit`, `notifications`, `media`,
+  `jobs`, `search abstraction` and `health checks` backlog remains SLATE-205+.
 - Validation: `npm run verify` passes end to end — `format:check` (Prettier
-  clean incl. the new package and `openapi.json`), `lint` (0 errors),
-  `typecheck` (0 errors), `test:unit` (194 passed: 5 `@slate/api` +
-  19 `@slate/auth` + 48 `@slate/database` + 80 `@slate/observability` +
-  19 `@slate/tenant-context` + 23 `@slate/testing`), `test:integration`
-  (29 passed against the live `slate-postgres` container via
-  `TEST_DATABASE_URL`: 5 `@slate/api` + 5 `@slate/auth` + 6 `@slate/database`
-  - 8 `@slate/tenant-context` + 5 `@slate/testing`), `build` (exit 0).
-    `package-lock.json` changed only additively (22 insertions) to link the new
-    workspace.
-- Blockers: None. Commits are local on `main` (ahead of `origin/main`); not
-  yet pushed, so the first green CI run on GitHub following the
-  dependabot/lockfile fix is still pending. `packages/api/` is still untracked
-  until committed.
+  clean), `lint` (0 errors), `typecheck` (0 errors), `test:unit` (194 passed:
+  5 `@slate/api` + 19 `@slate/auth` + 48 `@slate/database` +
+  80 `@slate/observability` + 19 `@slate/tenant-context` + 23
+  `@slate/testing`), `test:integration` (29 passed against the live
+  `slate-postgres` container via `TEST_DATABASE_URL`: 5 `@slate/api`,
+  5 `@slate/auth`, 6 `@slate/database`, 8 `@slate/tenant-context` and
+  5 `@slate/testing`), `build` (exit 0). `package-lock.json` took an
+  additive-only change (22 insertions) to link the new workspace.
+- Blockers: None. SLATE-203 is committed and **pushed** — `72d1325` is the tip
+  of `origin/main`. ADR 003 and the SLATE-204 task contract are committed
+  locally for review and not yet pushed.
