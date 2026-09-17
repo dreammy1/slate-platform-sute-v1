@@ -20,7 +20,8 @@ green (Section 2: one phase finishes before the next starts).
 Architecture reference: [`docs/adr/001-database-query-toolkit.md`](adr/001-database-query-toolkit.md)
 selects **Kysely on `pg`** as the database abstraction. Every downstream task
 assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr/003-system-settings-and-feature-flags.md)
-(Proposed) gates SLATE-204 and must be accepted before that task starts
+(Accepted) governs SLATE-204. [ADR 004](adr/004-background-jobs-and-task-queue.md)
+(Proposed) gates SLATE-205 and must be accepted before implementation
 (Section 67).
 
 > Issue IDs use the `SLATE-200` series for Phase 2. They are placeholders for
@@ -29,13 +30,14 @@ assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr
 
 ## Task index
 
-| Issue     | Agent                          | Capability                                                            | Gate link                         |
-| --------- | ------------------------------ | --------------------------------------------------------------------- | --------------------------------- |
-| SLATE-200 | agent:backend                  | database abstraction (Kysely, `pg`, migrations, tenant-scoped helper) | Tenant record                     |
-| SLATE-201 | agent:backend                  | tenant + organization context & isolation                             | Organization → Tenant record      |
-| SLATE-202 | agent:backend + agent:security | user + role + permission model & authz                                | User → Permission                 |
-| SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests               |
-| SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit |
+| Issue     | Agent                          | Capability                                                            | Gate link                              |
+| --------- | ------------------------------ | --------------------------------------------------------------------- | -------------------------------------- |
+| SLATE-200 | agent:backend                  | database abstraction (Kysely, `pg`, migrations, tenant-scoped helper) | Tenant record                          |
+| SLATE-201 | agent:backend                  | tenant + organization context & isolation                             | Organization → Tenant record           |
+| SLATE-202 | agent:backend + agent:security | user + role + permission model & authz                                | User → Permission                      |
+| SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests                    |
+| SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit      |
+| SLATE-205 | agent:backend + agent:security | background jobs & task queue                                          | Enqueue → Isolation → Recovery → Audit |
 
 ---
 
@@ -258,16 +260,125 @@ enabled boolean NOT NULL, created_at, updated_at)`, each with a unique
 
 ---
 
+## SLATE-205 — Background jobs & task queue
+
+- **Owning agent:** `agent:backend` + `agent:security`; `agent:qa` validates concurrency.
+- **Milestone:** M2 Core.
+- **Dependencies:** SLATE-200 through SLATE-204 (verified); ADR 004 acceptance.
+- **Architecture reference:** [ADR 004](adr/004-background-jobs-and-task-queue.md)
+  (**Proposed**). Read and accept it before implementation.
+- **Scope:** Create `packages/jobs` (`@slate/jobs`) using existing Kysely/`pg`.
+  Provide transactional enqueue, a typed/versioned handler registry with runtime
+  validation, tenant-bound workers, bounded retries, renewable leases,
+  idempotency and read-only job inspection. Jobs precede notifications and media
+  so these can enqueue durable work rather than rely on event subscribers.
+  Gate: **Enqueue → Isolation → Recovery → Audit**.
+- **Out of scope:** notification transports/templates, media handlers, arbitrary
+  HTTP job submission, retry/cancel endpoints, UI, cron, workflows, priorities,
+  cross-tenant dispatch, retention/purge, deployment orchestration, brokers and
+  exactly-once delivery. No timers on package import.
+- **Allowed files/packages:** `packages/jobs/` (new), `packages/database/`
+  (migration/schema and opt-in queue parameter omission), `packages/api/`
+  (inspection routes, event bridge, OpenAPI, tests), `packages/testing/`
+  (test-only helpers), root `package-lock.json` (workspace linkage),
+  `docs/adr/004-background-jobs-and-task-queue.md`, this contract and
+  `DEVELOPMENT_STATE.md`. Reuse observability; add no queue library or service.
+- **Contracts:**
+  - Database (migration required: yes): `0006_background_jobs.sql` adds
+    `background_job` with `id`, mandatory `tenant_id`, `type`, `payload jsonb`,
+    `idempotency_key`, constrained `status`, `attempts`, `max_attempts`,
+    `available_at`, `lease_token`, `lease_expires_at`, `actor_user_id`,
+    `request_id`, `last_error_code`, `finished_at`, `created_at`, `updated_at`.
+    Nullability, foreign keys, state constraints and indexes follow ADR 004.
+    Register in `Database` and `TENANT_OWNED_TABLES`; unique
+    `(tenant_id, type, idempotency_key)` prevents duplicate submissions.
+  - Package API: registry definitions pair a versioned dotted key with
+    `parse(unknown)` and a typed async handler. `enqueue(trx, context, input)`
+    requires a transaction and returns `{ jobId, created, notification }`
+    (notification absent on duplicates). One new job and one `jobs.enqueued`
+    audit row share the domain transaction. Different payloads for an existing
+    key conflict; identical duplicates reuse the row without another audit/event.
+    `createWorker({ tenantId, registry, db, logger, ... })` exposes explicit
+    start/stop and a testable runOnce. Handlers receive scoped DB access and an
+    abort signal. Expose `getQueueStats(tenantId)`.
+  - Worker: short atomic `FOR UPDATE SKIP LOCKED` claim, handler outside the
+    transaction, fenced acknowledgement/renewal/failure. Match tenant, job id,
+    running state, unexpired lease and token on transitions. Attempts increment
+    on claim. Retry transient failures with bounded exponential backoff/jitter;
+    recover expired leases, including terminal failure of exhausted attempts.
+    Defaults and limits follow ADR 004. Timeout/shutdown are cooperative and
+    do not guarantee exactly-once external side effects.
+  - HTTP: `GET /jobs` → `{ jobs: JobSummary[], nextCursor: string | null }`;
+    `GET /jobs/:id` → `{ job: JobSummary }`. Summary allowlist: id, type, status,
+    attempts, maxAttempts, availableAt, createdAt, updatedAt, finishedAt,
+    lastErrorCode. List accepts limit (1–100, default 50), status and opaque
+    `(created_at, id)` cursor, ordered ascending on that pair. Validate query
+    parameters independently of path routing; cursors never choose a tenant.
+    Both routes require `jobs.read`; preserve `{ error }` with 400 invalid input,
+    401 absent identity/context, 403 denied permission/context, 404 missing or
+    foreign job, and 500 unexpected failure. Update OpenAPI. Never return payload,
+    lease token, idempotency key or raw error details.
+  - Events: `jobs.enqueued`, `jobs.succeeded`, `jobs.failed`,
+    `jobs.retry_scheduled` carry `{ tenantId, jobId, type, attempt }` only.
+    Publish after commit through an injected interface bridged by the host to
+    the existing bus; never create durable work from a post-commit callback.
+    Duplicate enqueue emits nothing; publisher failures do not undo state.
+  - Observability: request/tenant/job-bound child loggers, safe failure codes,
+    attempt duration and queue statistics (due/delayed/running/failed counts,
+    oldest due age). Typed observer callbacks need no metrics vendor. Payload
+    omission includes SQL query/error logging; test the opt-in omission mode
+    without changing unrelated logging defaults.
+
+- **Security requirements:** only trusted server code registers/enqueues job types.
+  Runtime validation enforces bounded JSON (16 KiB serialized payload maximum).
+  Context supplies tenant/actor/request ids, never payload fields. Workers are
+  assigned one tenant by the host; handlers receive no root database client.
+  Reload references tenant-scoped and reauthorize deferred user-privileged work;
+  recorded actor ids are attribution, not a permission grant. Seed `jobs.read`
+  in fixtures using SLATE-202 patterns; document production grants without
+  auto-granting access. API checks use live permissions and hide foreign ids.
+  Audit, events, SQL logs and errors must not expose payloads or exception text.
+- **Acceptance criteria:**
+  - Domain write, enqueue and audit commit together; audit failure rolls all
+    three back and emits no event. Another connection sees no uncommitted job.
+  - Same tenant/type/key deduplicates; changed payload conflicts. The same key
+    in tenant B is independent. A cannot inspect, claim or acknowledge B's job.
+  - Independent workers cannot claim the same live lease. Expiry allows crash
+    recovery, but a stale worker cannot acknowledge or renew the replacement lease.
+  - Success is terminal. Transient failures schedule retries; exhaustion and
+    permanent failures become terminal, including an expired final attempt.
+    Unknown types/invalid stored payloads invoke no handler. Shutdown, timeout
+    and lease loss exercise cooperative cancellation and bounded concurrency.
+  - Read routes require `jobs.read`; revocation takes effect on the next call.
+    Pagination remains tenant-scoped and foreign job ids return 404.
+  - Events observe committed rows; logger/observer failures leave state intact.
+    Payload sentinels never appear in SQL logs, errors, audit, events or API.
+- **Tests required:** unit tests for registry typing (including compile-time
+  invalid-input cases), validation, retry bounds, transitions and shutdown;
+  isolated PostgreSQL integration tests for clean install/0005 upgrade/rerun,
+  concurrent claims on independent connections, rollback, deduplication, tenant
+  isolation, fencing and recovery. Inject time/random sources in unit tests and
+  control persisted lease timestamps in integration tests, rather than relying
+  on sleeps. Exercise both read routes through the Node HTTP adapter and a
+  test-only idempotent handler, without adding a production domain capability.
+- **Definition of Done:** ADR 004 accepted; all criteria above tested;
+  `npm run verify` clean; API/DB/Permission/Tenant/Events/Tests/Docs covered
+  (UI explicitly deferred). Update development state without declaring the
+  remaining Phase 2 backlog complete.
+
+---
+
 ## Planning artifact map
 
-| Phase 2 capability (Section 15)                                                  | First task                    |
-| -------------------------------------------------------------------------------- | ----------------------------- |
-| `database abstraction`                                                           | SLATE-200 (Kysely — ADR 001)  |
-| `tenants`, `organizations`                                                       | SLATE-201                     |
-| `users`, `roles`, `permissions`                                                  | SLATE-202                     |
-| `API`, event bus                                                                 | SLATE-203                     |
-| `audit`, `notifications`, `media`, `jobs`, `search abstraction`, `health checks` | SLATE-205+ (post-ADR backlog) |
-| `settings`, `feature flags`                                                      | SLATE-204 (ADR 003)           |
+| Phase 2 capability (Section 15)                                          | First task                     |
+| ------------------------------------------------------------------------ | ------------------------------ |
+| `database abstraction`                                                   | SLATE-200 (Kysely — ADR 001)   |
+| `tenants`, `organizations`                                               | SLATE-201                      |
+| `users`, `roles`, `permissions`                                          | SLATE-202                      |
+| `API`, event bus                                                         | SLATE-203                      |
+| `jobs`                                                                   | SLATE-205 (ADR 004 — Proposed) |
+| `audit`, `notifications`, `media`, `search abstraction`, `health checks` | SLATE-206+ (post-ADR backlog)  |
+| `settings`, `feature flags`                                              | SLATE-204 (ADR 003)            |
 
 > `authentication` is intentionally owned by SLATE-202 (authn is the prerequisite
 > to authorizing a user); `plugin runtime`, `license verification`, `theme

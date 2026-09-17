@@ -20,13 +20,16 @@
   Permissions are seeded in integration fixtures following SLATE-202; production
   role provisioning remains the host application's responsibility.
   The **Configuration → Isolation → Audit** gate is green.
-- Next Task: Plan **SLATE-205** from the remaining Phase 2 backlog in
-  `docs/phase2-agent-tasks.md`. Select the next capability, prepare its ADR
-  and task contract, and obtain acceptance before implementation (Section 67).
-  Phase 2 remains open: Section 31 also lists repositories, services,
-  notifications and media; the UI step belongs to Phase 4. Audit extraction,
-  notifications, media, jobs, search abstraction and health checks remain
-  in the SLATE-205+ backlog.
+- Next Task: **SLATE-205 planning in progress — Background jobs & task queue**
+  under `packages/jobs` (`@slate/jobs`). ADR 004 and the task contract in
+  `docs/phase2-agent-tasks.md` are drafted for review; ADR 004 remains **Proposed**.
+  Jobs are selected before notifications/media to provide durable transactional
+  enqueue, tenant-bound execution, retries and recovery on existing PostgreSQL.
+  Implementation has not started and requires ADR acceptance. The proposed gate
+  is **Enqueue → Isolation → Recovery → Audit**; no queue behavior is yet verified.
+  Phase 2 remains open. Audit extraction, notifications, media, search abstraction
+  and health checks remain SLATE-206+; the UI step belongs to Phase 4.
+  This planning change is intended for a local-only commit, not a push.
 - Validation: **`npm run verify` completed with exit code 0 on 2026-09-17**.
   Formatting, lint, typecheck and build passed. Unit tests: **307 passed**
   (API 10, auth 19, database 48, observability 80, settings 108,
