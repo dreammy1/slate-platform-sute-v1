@@ -97,6 +97,42 @@ export interface AuditLogTable {
   readonly occurred_at: Generated<Date>;
 }
 
+/**
+ * Tenant-owned configuration data (SLATE-204).
+ *
+ * `value` is `jsonb` and is always stored next to its `value_type`
+ * discriminator, so `@slate/settings` can hand a value back with the type it was
+ * written with. The column is typed `unknown` on purpose: the database layer
+ * cannot know a setting's shape, and `@slate/settings` owns the validation and
+ * parsing instead of guessing here.
+ */
+export interface SystemSettingTable {
+  readonly id: Generated<string>;
+  readonly tenant_id: string;
+  readonly key: string;
+  readonly value_type: string;
+  readonly value: unknown;
+  readonly created_at: Generated<Date>;
+  readonly updated_at: Generated<Date>;
+}
+
+/**
+ * A tenant-owned **override** of a platform feature flag (SLATE-204).
+ *
+ * Flag definitions and their defaults live in code (`@slate/settings`), so a row
+ * exists only where a tenant deviates from the default and an absent row means
+ * "use the registry default". An undefined key therefore can never be enabled
+ * (Master Plan Section 60).
+ */
+export interface FeatureFlagTable {
+  readonly id: Generated<string>;
+  readonly tenant_id: string;
+  readonly key: string;
+  readonly enabled: boolean;
+  readonly created_at: Generated<Date>;
+  readonly updated_at: Generated<Date>;
+}
+
 /** Migration ledger written by the runner in `src/runner.ts`. */
 export interface SlateMigrationsTable {
   readonly id: string;
@@ -115,6 +151,8 @@ export interface Database {
   readonly role_permission: RolePermissionTable;
   readonly tenant_membership: TenantMembershipTable;
   readonly audit_log: AuditLogTable;
+  readonly system_setting: SystemSettingTable;
+  readonly feature_flag: FeatureFlagTable;
   readonly slate_migrations: SlateMigrationsTable;
 }
 
@@ -129,6 +167,8 @@ export const TENANT_OWNED_TABLES = [
   'role',
   'permission',
   'audit_log',
+  'system_setting',
+  'feature_flag',
 ] as const;
 
 /** Every table the scoped helper will automatically filter by `tenant_id`. */

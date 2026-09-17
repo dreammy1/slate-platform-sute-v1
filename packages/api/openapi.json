@@ -44,6 +44,75 @@
           "name": { "type": "string", "minLength": 1, "maxLength": 200 }
         }
       },
+      "Setting": {
+        "type": "object",
+        "required": ["key", "value", "valueType"],
+        "description": "A tenant setting. `valueType` records the type the value was written with so `value` round-trips unchanged.",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Dotted, namespaced key (for example `branding.locale`).",
+            "example": "branding.locale"
+          },
+          "value": {
+            "description": "The stored value; its JSON type always agrees with `valueType`.",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "object" },
+              { "type": "array" }
+            ]
+          },
+          "valueType": {
+            "type": "string",
+            "enum": ["string", "number", "boolean", "json"]
+          }
+        },
+        "example": { "key": "branding.locale", "value": "en-GB", "valueType": "string" }
+      },
+      "UpdateSettingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value"],
+        "description": "Only `value` is accepted: the tenant comes from the resolved session context and `valueType` is derived from the value, so no client may supply either.",
+        "properties": {
+          "value": {
+            "description": "The value to store. `undefined` is not expressible in JSON, so omit the field is rejected rather than stored.",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "object" },
+              { "type": "array" }
+            ]
+          }
+        },
+        "example": { "value": "en-GB" }
+      },
+      "FeatureFlagMap": {
+        "type": "object",
+        "description": "Server-authoritative flag map for the resolved tenant: `override -> registry default -> false`. Only flags declared in the code-owned registry appear, and an undeclared key always resolves to `false` rather than erroring.",
+        "additionalProperties": { "type": "boolean" },
+        "example": { "feature.new-checkout": true, "feature.restaurant.v1": false }
+      },
+      "UpdateFeatureFlagRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled"],
+        "description": "A boolean sets the tenant override and `null` clears it, so the tenant reverts to the registry default. A client never supplies a tenant id.",
+        "properties": { "enabled": { "type": ["boolean", "null"] } },
+        "example": { "enabled": true }
+      },
+      "FeatureFlag": {
+        "type": "object",
+        "required": ["key", "enabled"],
+        "description": "The resolved state of one flag after the write, not the raw stored override.",
+        "properties": {
+          "key": { "type": "string", "example": "feature.new-checkout" },
+          "enabled": { "type": "boolean" }
+        }
+      },
       "Error": {
         "type": "object",
         "required": ["error"],
@@ -71,6 +140,15 @@
       },
       "Conflict": {
         "description": "A unique constraint was violated (for example a duplicate email).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": "Request rejected" }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "The request is not usable: a malformed body or unknown field, an invalid or over-long key, a value that cannot be stored, or an undeclared feature flag key. Rejected before any query or write.",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/Error" },
@@ -157,6 +235,163 @@
           "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "409": { "$ref": "#/components/responses/Conflict" },
+          "415": {
+            "description": "The Content-Type is not application/json (HTTP adapter).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Expected application/json" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/settings": {
+      "get": {
+        "operationId": "listSettings",
+        "summary": "List the settings of the resolved tenant",
+        "description": "Requires the `settings.read` permission in the resolved tenant. Rows are read through the tenant-scoped helper, so another tenant's settings are never returned. Nothing is cached: a committed change is visible on the next call.",
+        "parameters": [{ "$ref": "#/components/parameters/TenantId" }],
+        "responses": {
+          "200": {
+            "description": "Every setting of the resolved tenant, ordered by key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["settings"],
+                  "properties": {
+                    "settings": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Setting" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/settings/{key}": {
+      "put": {
+        "operationId": "putSetting",
+        "summary": "Upsert one setting in the resolved tenant",
+        "description": "Requires the `settings.write` permission. The value's type is derived from the value itself, so it round-trips unchanged. The setting and exactly one attributed `audit_log` row commit in a single transaction before 200 is returned; `settings.updated` is then published on the in-process bus carrying the key only, never the value (Master Plan Section 61).",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Dotted, namespaced setting key. URL-decoded, then validated: a malformed or over-long key is a 400 and no query is issued.",
+            "schema": { "type": "string", "maxLength": 200 },
+            "example": "branding.locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateSettingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The setting was written and audited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["setting"],
+                  "properties": { "setting": { "$ref": "#/components/schemas/Setting" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "415": {
+            "description": "The Content-Type is not application/json (HTTP adapter).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Expected application/json" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/features": {
+      "get": {
+        "operationId": "listFeatures",
+        "summary": "Resolve the feature flags of the resolved tenant",
+        "description": "Requires the `features.read` permission. The map is computed server-side on every call as `tenant override -> registry default -> false`; a key nobody declared resolves to `false` and never errors (Master Plan Section 60). Flag definitions are code-owned, so adding one needs no migration.",
+        "parameters": [{ "$ref": "#/components/parameters/TenantId" }],
+        "responses": {
+          "200": {
+            "description": "The resolved flag map for the resolved tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["features"],
+                  "properties": { "features": { "$ref": "#/components/schemas/FeatureFlagMap" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/features/{key}": {
+      "put": {
+        "operationId": "putFeatureFlag",
+        "summary": "Set or clear a feature flag override for the resolved tenant",
+        "description": "Requires the `features.write` permission. `true`/`false` writes the tenant override and `null` clears it so the tenant reverts to the registry default. An undeclared key is a 400, so a client can never switch on behaviour nobody declared. The override and exactly one attributed `audit_log` row commit in a single transaction before 200 is returned; `feature.flag.updated` is then published carrying the key only, never the resolved state.",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "A key declared in the code-owned flag registry. URL-decoded; an undeclared key is a 400 and no query is issued.",
+            "schema": { "type": "string" },
+            "example": "feature.ai.assistant"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateFeatureFlagRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The override was applied (or cleared) and audited.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FeatureFlag" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "415": {
             "description": "The Content-Type is not application/json (HTTP adapter).",
             "content": {

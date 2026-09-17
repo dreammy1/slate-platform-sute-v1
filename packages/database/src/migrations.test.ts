@@ -22,6 +22,8 @@ const CORE_TABLES = [
   'role_permission',
   'tenant_membership',
   'audit_log',
+  'system_setting',
+  'feature_flag',
 ] as const;
 
 describe('parseMigrationFileName', () => {
@@ -63,7 +65,13 @@ describe('loadMigrations', () => {
   const migrations = loadMigrations();
 
   it('discovers the Phase 2 migrations in dependency order', () => {
-    expect(migrations.map((migration) => migration.id)).toEqual(['0001', '0002', '0003', '0004']);
+    expect(migrations.map((migration) => migration.id)).toEqual([
+      '0001',
+      '0002',
+      '0003',
+      '0004',
+      '0005',
+    ]);
     expect(new Set(migrations.map((migration) => migration.id)).size).toBe(migrations.length);
   });
 
@@ -84,7 +92,14 @@ describe('loadMigrations', () => {
 
   it('requires every tenant-scoped table to carry a tenant_id', () => {
     const sql = migrations.map((migration) => migration.sql).join('\n');
-    for (const table of ['role', 'permission', 'tenant_membership', 'audit_log']) {
+    for (const table of [
+      'role',
+      'permission',
+      'tenant_membership',
+      'audit_log',
+      'system_setting',
+      'feature_flag',
+    ]) {
       const createTable = sql.match(
         new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([^;]+)\\);`),
       )?.[1];

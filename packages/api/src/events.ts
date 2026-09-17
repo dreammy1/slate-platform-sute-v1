@@ -3,6 +3,18 @@ import type { Logger } from '@slate/observability';
 export interface CoreEvents {
   'app.user.created': { tenantId: string; userId: string; actorUserId: string };
   'app.audit.recorded': { tenantId: string; auditId: string; actorUserId: string };
+  /**
+   * A tenant setting was written (SLATE-204). Carries the **key only**: a setting
+   * may hold sensitive tenant data, and Section 61 forbids putting sensitive
+   * customer data in events.
+   */
+  'settings.updated': { tenantId: string; key: string; actorUserId: string };
+  /**
+   * A tenant feature flag override was written or cleared (SLATE-204). Carries
+   * the **key only**; consumers resolve the flag server-side rather than
+   * trusting a value carried on the bus.
+   */
+  'feature.flag.updated': { tenantId: string; key: string; actorUserId: string };
 }
 type Listener<K extends keyof CoreEvents> = (
   payload: Readonly<CoreEvents[K]>,

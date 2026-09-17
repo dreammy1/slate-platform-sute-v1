@@ -1,6 +1,6 @@
 # 003 — System Settings & Feature Flags
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-17
 - **Deciders:** Slate architecture, security review
 - **Tags:** settings, feature flags, configuration, tenancy, security, Phase 2
@@ -44,7 +44,7 @@ Resolution is `tenant override → definition default → false`, resolved by th
 
 - a defined flag with no override resolves to its registry default;
 - an **unknown** key resolves to `false` and never throws — the system fails closed rather than enabling behaviour nobody declared; and
-- a client can never send `enabled`.
+- a client cannot assert a resolved flag state. Only `PUT /features/:key`, authorized with `features.write`, accepts `{ enabled: boolean | null }` as an override command; `null` clears the override.
 
 Keeping the definition in code means adding a flag needs no migration, and means the set of flags a deployment can honour is reviewable in the pull request that introduces them (Section 57: schema changes are deliberate, not the price of a flag).
 
@@ -61,6 +61,7 @@ The SLATE-203 handler chain is extended with the same gate order — context →
 - `GET /settings` (`settings.read`) — the resolved tenant's settings.
 - `PUT /settings/:key` (`settings.write`) — upsert one setting.
 - `GET /features` (`features.read`) — the resolved tenant's resolved flag map.
+- `PUT /features/:key` (`features.write`) — set or clear a declared flag's tenant override; the response is resolved server-side.
 
 ### Events after commit
 
@@ -79,7 +80,7 @@ A write is a mutation, so it is non-optional and follows SLATE-203 exactly: exac
 
 ## Security requirements
 
-- **Section 13 — never trust client state.** The tenant id comes from the resolved context only; ids in the body, query string or `X-Tenant-Id` alone are never trusted. The client cannot supply `enabled` or a tenant id.
+- **Section 13 — never trust client state.** The tenant id comes from the resolved context only; ids in the body, query string or `X-Tenant-Id` alone are never trusted. The client cannot supply a tenant id or a trusted resolved flag state; authorized override commands are the sole exception for accepting `enabled`.
 - **Section 60 — server-authoritative.** The flag map is computed server-side for the session's tenant on every call.
 - **Section 65 — adversarial cases.** Tenant A cannot read or write tenant B's settings or overrides; a user without the matching permission is rejected before any write; an unknown flag key resolves to `false` (fail closed, no throw); and a permission revoked mid-session takes effect immediately — the same no-caching rule the SLATE-202 evaluator already follows.
 - **Section 61 — redaction.** Values pass through the logger's redaction layer on the way out, and event payloads never include them.

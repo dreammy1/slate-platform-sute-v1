@@ -54,6 +54,34 @@ describe('API pre-query rejection', () => {
     },
   );
 });
+describe('configuration key rejection', () => {
+  it.each([
+    '/settings/%',
+    '/features/%',
+    '/settings/locale',
+    `/settings/${'a'.repeat(300)}.value`,
+    '/features/feature.undeclared',
+  ])('returns 400 without opening a transaction for %s', async (path) => {
+    const db = database();
+    const transaction = vi.spyOn(db, 'transaction');
+    try {
+      const api = createApi({ db, logger, events: createEventBus(logger) });
+      await expect(
+        api({
+          method: 'PUT',
+          path,
+          tenantId,
+          principal: { userId: 'user', tenantIds: [tenantId], activeTenantId: tenantId },
+          body: { value: true },
+        }),
+      ).resolves.toEqual({ status: 400, body: { error: 'Request rejected' } });
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      await db.destroy();
+    }
+  });
+});
+
 describe('event bus', () => {
   it('awaits subscribers, isolates failures and supports unsubscribe', async () => {
     const sink = vi.fn();

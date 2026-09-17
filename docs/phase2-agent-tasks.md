@@ -224,7 +224,9 @@ enabled boolean NOT NULL, created_at, updated_at)`, each with a unique
     `{ tenantId, key, actorUserId }`, published after commit — never the value.
 - **Security requirements:**
   - Section 13: the tenant comes from the resolved context; `X-Tenant-Id` alone
-    is never trusted and a client cannot supply `enabled` or a tenant id.
+    is never trusted and a client cannot supply a tenant id or a trusted
+    resolved flag state. Only the `features.write`-authorized PUT accepts
+    `{ enabled: boolean | null }` as an override command (`null` clears it).
   - Section 60: flags are server-authoritative; an unknown key resolves to
     `false` and never throws.
   - Section 65 adversarial: tenant A cannot read or write tenant B's rows; a

@@ -1,16 +1,21 @@
 {
-  "name": "@slate/api",
+  "name": "@slate/settings",
   "version": "0.1.0",
   "private": true,
-  "description": "Tenant-aware HTTP scaffold, transactional audit and in-process events (SLATE-203).",
+  "description": "Tenant-scoped system settings and server-authoritative feature flags for the Slate Next-Gen Platform (SLATE-204). See docs/adr/003-system-settings-and-feature-flags.md.",
   "type": "module",
   "files": [
-    "src",
-    "openapi.json"
+    "src"
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./openapi": "./openapi.json"
+    "./keys": "./src/keys.ts",
+    "./values": "./src/values.ts",
+    "./flags": "./src/flags.ts",
+    "./flags-service": "./src/flags-service.ts",
+    "./query-service": "./src/query-service.ts",
+    "./settings": "./src/settings.ts",
+    "./database": "./src/database.ts"
   },
   "scripts": {
     "test": "npm run test:unit && npm run test:integration",
@@ -19,11 +24,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@slate/auth": "*",
     "@slate/database": "*",
-    "@slate/observability": "*",
-    "@slate/settings": "*",
-    "@slate/tenant-context": "*",
     "kysely": "^0.29.6"
   },
   "devDependencies": {
