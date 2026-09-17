@@ -1,0 +1,35 @@
+{
+  "name": "@slate/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tenant-aware HTTP scaffold, transactional audit and in-process events (SLATE-203).",
+  "type": "module",
+  "files": [
+    "src",
+    "openapi.json"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi": "./openapi.json"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@slate/auth": "*",
+    "@slate/database": "*",
+    "@slate/observability": "*",
+    "@slate/tenant-context": "*",
+    "kysely": "^0.29.6"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^5.0.1",
+    "vitest": "^5.0.1"
+  }
+}

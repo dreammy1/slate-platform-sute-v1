@@ -1,0 +1,7 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "display": "Slate API Package",
+  "compilerOptions": { "allowImportingTsExtensions": true },
+  "include": ["src", "*.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}

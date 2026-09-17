@@ -1,0 +1,174 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Slate Core API",
+    "version": "0.1.0",
+    "description": "SLATE-203 scaffold contract. The tenant is always resolved server-side from the session principal, never from a client header alone (Master Plan Section 13). This is a stub committed so later phases can contract-test."
+  },
+  "servers": [{ "url": "/" }],
+  "security": [{ "sessionCookie": [] }],
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "slate_session",
+        "description": "Server-verified session. The scaffold adapter takes the principal from trusted session middleware."
+      }
+    },
+    "parameters": {
+      "TenantId": {
+        "name": "X-Tenant-Id",
+        "in": "header",
+        "required": false,
+        "description": "Tenant the request acts on. Honored only when the session authorizes it; 403 otherwise. A session-bound active tenant wins and the header may only repeat it.",
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "required": ["id", "email", "name"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "name": { "type": "string" }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "name"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 254 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string" } }
+      }
+    },
+    "responses": {
+      "UnauthorizedTenantContext": {
+        "description": "401 when no tenant can be resolved or the session is absent; 403 when the requested tenant is not authorized (no query is issued).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": "Unauthorized tenant context" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The authenticated actor lacks the required permission for the tenant.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": "Request rejected" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "A unique constraint was violated (for example a duplicate email).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": "Request rejected" }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Unexpected failure; the request transaction is rolled back so no partial write survives.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": "Internal server error" }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "summary": "List the members of the resolved tenant",
+        "description": "Requires the `users.read` permission in the resolved tenant. Rows are read through the tenant-scoped helper, so another tenant's members are not returned.",
+        "parameters": [{ "$ref": "#/components/parameters/TenantId" }],
+        "responses": {
+          "200": {
+            "description": "Members of the resolved tenant (at most 100).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["users"],
+                  "properties": {
+                    "users": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/User" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      },
+      "post": {
+        "operationId": "createUser",
+        "summary": "Provision an inactive user in the resolved tenant",
+        "description": "Requires the `users.write` permission. The user, the tenant membership and exactly one attributed `audit_log` row commit in a single transaction before 201 is returned; `app.user.created` and `app.audit.recorded` are then published on the in-process bus.",
+        "parameters": [{ "$ref": "#/components/parameters/TenantId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The user was created and audited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["user"],
+                  "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not an object, carries unknown fields, or fails validation.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Request rejected" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "415": {
+            "description": "The Content-Type is not application/json (HTTP adapter).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Expected application/json" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    }
+  }
+}

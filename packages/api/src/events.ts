@@ -1,0 +1,39 @@
+import type { Logger } from '@slate/observability';
+
+export interface CoreEvents {
+  'app.user.created': { tenantId: string; userId: string; actorUserId: string };
+  'app.audit.recorded': { tenantId: string; auditId: string; actorUserId: string };
+}
+type Listener<K extends keyof CoreEvents> = (
+  payload: Readonly<CoreEvents[K]>,
+) => void | Promise<void>;
+
+/** Best-effort in-process delivery, not a durable outbox. Subscribers cannot undo a commit. */
+export function createEventBus(logger: Logger) {
+  const listeners = new Map<keyof CoreEvents, Set<(payload: never) => void | Promise<void>>>();
+  return {
+    subscribe<K extends keyof CoreEvents>(name: K, listener: Listener<K>): () => void {
+      const group = listeners.get(name) ?? new Set();
+      group.add(listener);
+      listeners.set(name, group);
+      return () => {
+        group.delete(listener);
+      };
+    },
+    async publish<K extends keyof CoreEvents>(name: K, payload: CoreEvents[K]): Promise<void> {
+      for (const listener of [...(listeners.get(name) ?? [])]) {
+        try {
+          await listener(Object.freeze({ ...payload }) as never);
+        } catch {
+          // Never expose subscriber errors or turn a committed write into an HTTP failure.
+          try {
+            logger.error('event subscriber failed', { event: name });
+          } catch {
+            /* sink failure */
+          }
+        }
+      }
+    },
+  };
+}
+export type EventBus = ReturnType<typeof createEventBus>;
