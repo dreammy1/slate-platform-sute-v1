@@ -38,6 +38,37 @@ assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr
 | SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests                    |
 | SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit      |
 | SLATE-205 | agent:backend + agent:security | background jobs & task queue                                          | Enqueue → Isolation → Recovery → Audit |
+| SLATE-206 | agent:backend + agent:security | transactional notifications                                             | Enqueue → Deliver → Retry → Audit     |
+
+
+## SLATE-206 — Transactional Notifications
+
+- **Owning agent:** `agent:backend`
+- **Milestone:** M2 Core
+- **Scope:** Implement a provider-agnostic notification system leveraging `@slate/jobs` for durable delivery.
+- **Out of scope:** User preference management; template UI; delivery tracking (webhooks); multi-channel orchestration.
+- **Allowed files/packages:**
+  - `packages/notifications/` (new)
+  - `packages/jobs/src/` (to register notification handlers)
+  - `packages/database/` (for notification-related tables if needed, though jobs table is primary)
+  - `docs/adr/005-transactional-notifications.md` (read)
+- **API/Database/Event contracts:**
+  - **API**: No new public API routes in this task; notifications are system-triggered.
+  - **Database**: `background_job` table serves as the outbox.
+  - **Events**: `notifications.sent`, `notifications.failed` published after delivery.
+- **Security requirements:**
+  - Notification handlers must execute within the `tenantId` context of the job.
+  - Provider credentials must be stored securely (referenced via settings).
+- **Acceptance criteria:**
+  - **Atomic Enqueue**: Prove that calling `notifications.enqueue` within a transaction rolls back if the transaction fails.
+  - **Provider Abstraction**: Verify that changing the `NotificationProvider` implementation does not require changes to the domain caller.
+  - **Retry Resilience**: Prove that a `TransientError` from the provider schedules a retry via `@slate/jobs`.
+  - **Permanent Failure**: Prove that a `PermanentError` (e.g., invalid address) marks the job as failed without further retries.
+  - **Tenant Isolation**: Ensure notifications for Tenant A cannot be sent using Tenant B's provider configuration.
+- **Tests required:** Unit tests for template resolution and provider dispatch; integration tests for the full Enqueue $\rightarrow$ Job $\rightarrow$ Provider loop using a mock provider.
+- **Definition of Done**: ADR 005 accepted; all criteria above tested; `npm run verify` clean; update development state.
+
+---
 
 ---
 

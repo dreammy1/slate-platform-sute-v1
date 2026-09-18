@@ -1,0 +1,35 @@
+{
+  "name": "@slate/jobs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Durable PostgreSQL-backed background jobs with transactional enqueue, tenant-bound workers and lease-fenced recovery (SLATE-205). See docs/adr/004-background-jobs-and-task-queue.md.",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts",
+    "./enqueue": "./src/enqueue.ts",
+    "./worker": "./src/worker.ts",
+    "./inspection": "./src/inspection.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@slate/database": "*",
+    "@slate/observability": "*",
+    "kysely": "^0.29.6"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^5.0.1",
+    "vitest": "^5.0.1"
+  }
+}

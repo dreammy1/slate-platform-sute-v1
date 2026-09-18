@@ -1,6 +1,6 @@
 # 004 — Background Jobs & Task Queue
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-17
 - **Deciders:** Slate architecture, security review
 - **Tags:** jobs, PostgreSQL, tenancy, reliability, observability, Phase 2
