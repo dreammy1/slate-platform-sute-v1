@@ -1,6 +1,10 @@
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { closeDatabase, createDatabase, runMigrations, type Database } from '@slate/database';
+import { FileSystemStorageProvider, MediaEngine } from '@slate/media';
 import { createLogger } from '@slate/observability';
 import { FEATURE_FLAG_KEYS } from '@slate/settings';
 import { createIsolatedDatabase, integrationEnabled, type IsolatedDatabase } from '@slate/testing';
@@ -25,6 +29,11 @@ describe.skipIf(!integrationEnabled())('configuration routes (SLATE-204)', () =>
   let memberId: string;
   let adminRoleId: string;
   const logger = createLogger({ env: { SLATE_ENV: 'test' }, sink: vi.fn() });
+  /** Storage is a required API dependency; these tests use a temp directory. */
+  const mediaEngine = new MediaEngine(
+    new FileSystemStorageProvider(mkdtempSync(join(tmpdir(), 'slate-media-'))),
+    logger,
+  );
 
   /** The configured principal for one of the two seeded users, in tenant A. */
   const principalFor = (userId: string) => ({
@@ -41,7 +50,7 @@ describe.skipIf(!integrationEnabled())('configuration routes (SLATE-204)', () =>
     body?: unknown,
     tenantId: string = tenantA,
   ) =>
-    createApi({ db, logger, events: createEventBus(logger) })({
+    createApi({ db, logger, events: createEventBus(logger), mediaEngine })({
       method,
       path,
       tenantId,
@@ -161,7 +170,7 @@ describe.skipIf(!integrationEnabled())('configuration routes (SLATE-204)', () =>
         delivered.push({ key: payload.key, visibleAtDelivery: row !== undefined });
       });
 
-      const response = await createApi({ db, logger, events: bus })({
+      const response = await createApi({ db, logger, events: bus, mediaEngine })({
         method: 'PUT',
         path: '/settings/branding.currency',
         tenantId: tenantA,
@@ -268,7 +277,7 @@ describe.skipIf(!integrationEnabled())('configuration routes (SLATE-204)', () =>
         delivered.push({ key: payload.key, enabled: row?.enabled ?? false });
       });
 
-      const response = await createApi({ db, logger, events: bus })({
+      const response = await createApi({ db, logger, events: bus, mediaEngine })({
         method: 'PUT',
         path: '/features/feature.ai.assistant',
         tenantId: tenantA,
@@ -324,7 +333,7 @@ describe.skipIf(!integrationEnabled())('configuration routes (SLATE-204)', () =>
         db,
       );
       try {
-        const result = await createApi({ db, logger, events: bus })({
+        const result = await createApi({ db, logger, events: bus, mediaEngine })({
           method: 'PUT',
           path: '/settings/rollback.probe',
           tenantId: tenantA,

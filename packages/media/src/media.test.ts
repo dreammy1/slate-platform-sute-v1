@@ -1,9 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { mkdirSync } from 'node:fs';
 import { MediaEngine } from './engine';
 import { FileSystemStorageProvider } from './providers/filesystem';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync, mkdirSync } from 'node:fs';
+
 import { createLogger } from '@slate/observability';
 
 describe('MediaEngine', () => {
@@ -36,8 +37,8 @@ describe('MediaEngine', () => {
   it('enforces tenant isolation on download', async () => {
     const tenantA = 'tenant-a';
     const tenantB = 'tenant-b';
-    const path = 'storage/tenant-a/test.txt';
-    
+    const path = `storage/${tenantA}/test.txt`;
+
     await engine.getProvider().upload(path, Buffer.from('secret'), 'text/plain');
 
     await expect(engine.downloadFile(tenantB, path)).rejects.toThrow('Tenant isolation violation');
@@ -46,8 +47,8 @@ describe('MediaEngine', () => {
   it('enforces tenant isolation on delete', async () => {
     const tenantA = 'tenant-a';
     const tenantB = 'tenant-b';
-    const path = 'storage/tenant-a/test.txt';
-    
+    const path = `storage/${tenantA}/test.txt`;
+
     await engine.getProvider().upload(path, Buffer.from('secret'), 'text/plain');
 
     await expect(engine.deleteFile(tenantB, path)).rejects.toThrow('Tenant isolation violation');
@@ -64,7 +65,7 @@ describe('MediaEngine', () => {
     const tenantId = 'tenant-1';
     const path = 'storage/tenant-1/exists.txt';
     await engine.getProvider().upload(path, Buffer.from('ok'), 'text/plain');
-    
+
     expect(await engine.exists(tenantId, path)).toBe(true);
     expect(await engine.exists(tenantId, 'storage/tenant-1/missing.txt')).toBe(false);
   });

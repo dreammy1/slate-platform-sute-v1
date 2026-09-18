@@ -25,6 +25,7 @@
     "@slate/observability": "*",
     "@slate/settings": "*",
     "@slate/tenant-context": "*",
+    "@slate/media": "*",
     "kysely": "^0.29.6"
   },
   "devDependencies": {

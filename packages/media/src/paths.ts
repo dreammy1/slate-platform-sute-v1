@@ -1,5 +1,3 @@
-import { join, dirname } from 'node:path';
-
 export function getTenantPath(tenantId: string, category: string, fileName: string): string {
   return `storage/${tenantId}/${category}/${fileName}`;
 }

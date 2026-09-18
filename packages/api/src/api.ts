@@ -20,6 +20,7 @@
  * docs/phase2-agent-tasks.md (SLATE-203 and SLATE-204 API contracts).
  */
 
+import { randomUUID } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import { createAuth } from '@slate/auth';
 import { createTenantDatabase, type Database } from '@slate/database';
@@ -39,6 +40,7 @@ import {
   type SettingValue,
 } from '@slate/settings';
 import { getJob, listJobs, JobPayloadError } from '@slate/jobs';
+import { MediaEngine } from '@slate/media';
 import type { Logger } from '@slate/observability';
 import type { EventBus } from './events.ts';
 
@@ -56,13 +58,17 @@ export interface ApiResponse {
   readonly status: number;
   readonly body: unknown;
 }
-import { FileSystemStorageProvider } from '@slate/media';
 
 export interface ApiOptions {
   readonly db: Kysely<Database>;
   readonly logger: Logger;
   readonly events: EventBus;
-  readonly mediaEngine?: MediaEngine;
+  /**
+   * Injected, never defaulted. Storage is a deployment decision, and a hidden
+   * local-disk fallback would write real tenant files into the process temp
+   * directory the moment a host forgot to configure storage (ADR 006).
+   */
+  readonly mediaEngine: MediaEngine;
 }
 
 class HttpError extends Error {
@@ -136,6 +142,108 @@ function inputFeatureFlagEnabled(body: unknown): boolean | null {
   if (typeof enabled !== 'boolean') throw new HttpError(400);
   return enabled;
 }
+
+/** How long a generated upload/download URL stays valid. */
+const PRESIGN_EXPIRES_IN_SECONDS = 3600;
+/**
+ * A storage category is exactly one object-key segment, never a path: it is
+ * joined into the key, so separators and dot segments are rejected outright.
+ */
+const STORAGE_SEGMENT = /^[a-z0-9_-]{1,64}$/;
+/** The id `POST /media/presign` hands out and `POST /media` echoes back. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_FILE_NAME_LENGTH = 255;
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+/**
+ * The object key of a tenant-bound asset (`storage/{tenant}/{category}/{id}`).
+ *
+ * Every segment is validated before this is called, so the result can only ever
+ * sit under the caller's own tenant prefix and no segment can carry `/`, `\` or
+ * `..` out of it (ADR 006 tenant-bound access control).
+ */
+function mediaPath(tenantId: string, category: string, id: string): string {
+  return `storage/${tenantId}/${category}/${id}`;
+}
+
+function readCategory(value: unknown): string {
+  if (typeof value !== 'string' || !STORAGE_SEGMENT.test(value)) throw new HttpError(400);
+  return value;
+}
+
+function readMediaId(value: unknown): string {
+  if (typeof value !== 'string' || !UUID.test(value)) throw new HttpError(400);
+  return value;
+}
+
+function readMimeType(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 128 || !/^[\w.+-]+\/[\w.+-]+$/.test(value))
+    throw new HttpError(400);
+  return value;
+}
+
+function readOriginalName(value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '' || value.length > MAX_FILE_NAME_LENGTH)
+    throw new HttpError(400);
+  return value;
+}
+
+/** Reads the body of `POST /media/presign`: no id, no path, no tenant id. */
+function inputMediaPresign(body: unknown): {
+  category: string;
+  mimeType: string;
+  originalName: string;
+} {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(400);
+  const fields = body as Record<string, unknown>;
+  if (Object.keys(fields).some((key) => !['category', 'mimeType', 'originalName'].includes(key)))
+    throw new HttpError(400);
+  return {
+    category: readCategory(fields['category']),
+    mimeType: readMimeType(fields['mimeType']),
+    originalName: readOriginalName(fields['originalName']),
+  };
+}
+
+/**
+ * Reads the body of `POST /media`, the completion half of the presigned flow.
+ *
+ * `id` is the value `POST /media/presign` returned. It is re-validated as a UUID
+ * and the storage path is rebuilt from the tenant context, the category and that
+ * UUID, so a client can neither choose where its bytes land nor walk out of its
+ * own tenant prefix with a dot segment (Section 13).
+ */
+function inputMediaUpload(body: unknown): {
+  id: string;
+  category: string;
+  mimeType: string;
+  size: number;
+  originalName: string;
+} {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(400);
+  const fields = body as Record<string, unknown>;
+  if (
+    Object.keys(fields).some(
+      (key) => !['id', 'category', 'mimeType', 'size', 'originalName'].includes(key),
+    )
+  )
+    throw new HttpError(400);
+  const size = fields['size'];
+  if (
+    typeof size !== 'number' ||
+    !Number.isSafeInteger(size) ||
+    size < 0 ||
+    size > MAX_UPLOAD_BYTES
+  )
+    throw new HttpError(400);
+  return {
+    id: readMediaId(fields['id']),
+    category: readCategory(fields['category']),
+    mimeType: readMimeType(fields['mimeType']),
+    size,
+    originalName: readOriginalName(fields['originalName']),
+  };
+}
 /** The routes the scaffold serves, each with the permission key it requires. */
 export const ROUTE_PERMISSIONS = {
   'GET /users': 'users.read',
@@ -146,6 +254,10 @@ export const ROUTE_PERMISSIONS = {
   'PUT /features/:key': 'features.write',
   'GET /jobs': 'jobs.read',
   'GET /jobs/:id': 'jobs.read',
+  'POST /media/presign': 'media.upload',
+  'POST /media': 'media.upload',
+  'GET /media/:id': 'media.read',
+  'DELETE /media/:id': 'media.delete',
 } as const;
 
 export type RouteKey = keyof typeof ROUTE_PERMISSIONS;
@@ -198,6 +310,28 @@ export function matchRoute(request: ApiRequest): RouteMatch {
     return { ok: true, route: 'GET /jobs/:id', key: job[1] };
   }
 
+  // Media is a presigned flow plus a completion call, so the collection path
+  // takes a POST while a single asset is read or deleted by its id.
+  if (path === '/media/presign') {
+    if (method === 'POST') return { ok: true, route: 'POST /media/presign', key: undefined };
+    return { ok: false, status: 405 };
+  }
+
+  if (path === '/media') {
+    if (method === 'POST') return { ok: true, route: 'POST /media', key: undefined };
+    return { ok: false, status: 405 };
+  }
+
+  // Exactly one segment: `/media/a/b` is not a route, and `:id` is validated as
+  // a UUID before it is ever joined into an object key.
+  const media = /^\/media\/([^/]+)$/.exec(path);
+  if (media !== null) {
+    const key = media[1]!;
+    if (method === 'GET') return { ok: true, route: 'GET /media/:id', key };
+    if (method === 'DELETE') return { ok: true, route: 'DELETE /media/:id', key };
+    return { ok: false, status: 405 };
+  }
+
   const setting = /^\/settings\/(.+)$/.exec(path);
   if (setting !== null) {
     if (method !== 'PUT') return { ok: false, status: 405 };
@@ -248,7 +382,7 @@ function isUniqueViolation(error: unknown): boolean {
  * authorization and uniqueness failures all come back as a response, so the
  * HTTP adapter stays a thin translation layer.
  */
-export function createApi({ db, logger, events, mediaEngine: providedEngine }: ApiOptions) {
+export function createApi({ db, logger, events, mediaEngine }: ApiOptions) {
   return async (request: ApiRequest): Promise<ApiResponse> => {
     const resolved = resolveTenantContext({
       principal: request.principal,
@@ -256,7 +390,6 @@ export function createApi({ db, logger, events, mediaEngine: providedEngine }: A
     });
     if (!resolved.ok) return { status: resolved.status, body: errorBody(resolved.status) };
     const { tenantId } = resolved.context;
-    const mediaEngine = providedEngine ?? new MediaEngine(new FileSystemStorageProvider('/tmp'), logger);
 
     // A principal with no usable identity is rejected here, still before the
     // transaction: an empty user id could otherwise only fail inside the actor
@@ -468,79 +601,101 @@ export function createApi({ db, logger, events, mediaEngine: providedEngine }: A
               ),
             };
           }
-          // Media routes
           case 'POST /media/presign': {
-            const body = request.body as any;
-            const { category, mimeType, originalName } = body ?? {};
-            if (
-              typeof category !== 'string' ||
-              !/^[a-z0-9_-]{1,64}$/.test(category) ||
-              typeof mimeType !== 'string' ||
-              typeof originalName !== 'string' ||
-              originalName.length > 255
-            ) throw new HttpError(400);
-            const id = crypto.randomUUID();
+            // `mimeType` and `originalName` are validated for shape but not used
+            // here: the completer sends them again when it registers the file.
+            const { category } = inputMediaPresign(request.body);
+            // The object key is generated here, never supplied by the client.
+            const id = randomUUID();
             const { path, url } = await mediaEngine.getUploadUrl(tenantId, category, id);
-            return { response: { status: 200, body: { id, path, url, expiresIn: 3600 } }, notifications: [] };
+            return {
+              response: {
+                status: 200,
+                body: { id, path, url, expiresIn: PRESIGN_EXPIRES_IN_SECONDS },
+              },
+              // A presign changes nothing that needs announcing: no row and no
+              // bytes exist until the upload completes.
+              notifications: [],
+            };
           }
           case 'POST /media': {
-            const body = request.body as any;
-            const { id, category, mimeType, size, originalName } = body ?? {};
-            if (
-              typeof id !== 'string' ||
-              typeof category !== 'string' ||
-              typeof mimeType !== 'string' ||
-              typeof originalName !== 'string' ||
-              typeof size !== 'number' ||
-              !/^[a-z0-9_-]{1,64}$/.test(category) ||
-              originalName.length > 255 ||
-              size < 0 ||
-              size > 100 * 1024 * 1024
-            ) throw new HttpError(400);
-            const path = `storage/${tenantId}/${category}/${id}`;
-            const exists = await mediaEngine.exists(tenantId, path);
-            if (!exists) throw new HttpError(400);
+            const { id, category, mimeType, size, originalName } = inputMediaUpload(request.body);
+            // Rebuilt from trusted values, so the completed upload can only land
+            // under this tenant's prefix, and the object must already be there:
+            // a client cannot claim a file that was never uploaded.
+            const path = mediaPath(tenantId, category, id);
+            if (!(await mediaEngine.exists(tenantId, path))) throw new HttpError(400);
             const auditId = await audit('media.uploaded', 'media_file', id, { tenantId, path });
-            await trx.insertInto('media_files').values({
-              id,
-              tenant_id: tenantId,
-              storage_path: path,
-              mime_type: mimeType,
-              size: size.toString(),
-              original_name: originalName,
-            }).execute();
+            await trx
+              .insertInto('media_files')
+              .values({
+                id,
+                tenant_id: tenantId,
+                storage_path: path,
+                mime_type: mimeType,
+                size: size.toString(),
+                original_name: originalName,
+              })
+              .execute();
             return {
               response: { status: 201, body: { id, path, mimeType, size, originalName } },
               notifications: afterWrite('media.uploaded', auditId, () =>
-                events.publish('media.uploaded', { tenantId, fileId: id, actorUserId: actor.id })
+                events.publish('media.uploaded', { tenantId, fileId: id, actorUserId: actor.id }),
               ),
             };
           }
           case 'GET /media/:id': {
             const mediaId = key!;
-            const row = await trx.selectFrom('media_files').selectAll().where('id', '=', mediaId).where('tenant_id', '=', tenantId).executeTakeFirst();
+            const row = await trx
+              .selectFrom('media_files')
+              .selectAll()
+              .where('id', '=', mediaId)
+              .where('tenant_id', '=', tenantId)
+              .executeTakeFirst();
             if (!row) throw new HttpError(404);
             const url = await mediaEngine.getDownloadUrl(tenantId, row.storage_path);
-            return { response: { status: 200, body: { url, mimeType: row.mime_type, size: Number(row.size), originalName: row.original_name } }, notifications: [] };
+            return {
+              response: {
+                status: 200,
+                body: {
+                  url,
+                  mimeType: row.mime_type,
+                  size: Number(row.size),
+                  originalName: row.original_name,
+                },
+              },
+              notifications: [],
+            };
           }
           case 'DELETE /media/:id': {
             const mediaId = key!;
-            const row = await trx.selectFrom('media_files').selectAll().where('id', '=', mediaId).where('tenant_id', '=', tenantId).executeTakeFirst();
+            const row = await trx
+              .selectFrom('media_files')
+              .selectAll()
+              .where('id', '=', mediaId)
+              .where('tenant_id', '=', tenantId)
+              .executeTakeFirst();
             if (!row) throw new HttpError(404);
             await mediaEngine.deleteFile(tenantId, row.storage_path);
-            const auditId = await audit('media.deleted', 'media_file', mediaId, { tenantId, path: row.storage_path });
+            const auditId = await audit('media.deleted', 'media_file', mediaId, {
+              tenantId,
+              path: row.storage_path,
+            });
             await trx.deleteFrom('media_files').where('id', '=', mediaId).execute();
             return {
               response: { status: 204, body: null },
               notifications: afterWrite('media.deleted', auditId, () =>
-                events.publish('media.deleted', { tenantId, fileId: mediaId, actorUserId: actor.id })
+                events.publish('media.deleted', {
+                  tenantId,
+                  fileId: mediaId,
+                  actorUserId: actor.id,
+                }),
               ),
             };
           }
           // End of media routes
         }
       });
-
 
       // Past this point the transaction has committed. Only now may the audit
       // line be logged and the events be published, so a write that rolled back

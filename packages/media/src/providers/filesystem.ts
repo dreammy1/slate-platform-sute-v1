@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { MediaStorageProvider, StorageMetadata } from '../types';
+import type { MediaStorageProvider, StorageMetadata } from '../types';
 
 export class FileSystemStorageProvider implements MediaStorageProvider {
   constructor(private readonly rootDir: string) {}
@@ -29,8 +29,8 @@ export class FileSystemStorageProvider implements MediaStorageProvider {
     await fs.unlink(this.getAbsolutePath(path));
   }
 
-  async getSignedUrl(path: string, expiresIn: number): Promise<string> {
-    // For local FS, we just return the path. 
+  async getSignedUrl(path: string, _expiresIn: number): Promise<string> {
+    // For local FS, we just return the path.
     // expiresIn is ignored as local files are permanent unless deleted.
     return `file://${this.getAbsolutePath(path)}`;
   }

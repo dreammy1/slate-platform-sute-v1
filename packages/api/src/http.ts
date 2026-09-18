@@ -34,7 +34,7 @@ function allowedVerbs(path: string): string | undefined {
     return 'GET';
   if (normalized.startsWith('/settings/') || normalized.startsWith('/features/')) return 'PUT';
   if (normalized.startsWith('/jobs/')) return 'GET';
-  if (normalized === '/media/presign') return 'POST';
+  if (normalized === '/media' || normalized === '/media/presign') return 'POST';
   if (normalized.startsWith('/media/')) return 'GET, DELETE';
 
   return undefined;

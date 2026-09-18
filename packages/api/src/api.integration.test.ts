@@ -7,6 +7,10 @@ import { createApi } from './api.ts';
 import { createEventBus } from './events.ts';
 import { createHttpHandler } from './http.ts';
 import { createServer } from 'node:http';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FileSystemStorageProvider, MediaEngine } from '@slate/media';
 
 describe.skipIf(!integrationEnabled())('API transactional user creation', () => {
   let isolated: IsolatedDatabase;
@@ -20,6 +24,11 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
     },
   });
   const events = createEventBus(logger);
+  /** Storage is a required API dependency; these tests use a temp directory. */
+  const mediaEngine = new MediaEngine(
+    new FileSystemStorageProvider(mkdtempSync(join(tmpdir(), 'slate-media-'))),
+    logger,
+  );
   beforeAll(async () => {
     isolated = await createIsolatedDatabase({ schemaPrefix: 'slate_api' });
     db = createDatabase({
@@ -72,7 +81,7 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
     if (isolated) await isolated.dispose();
   });
   it('commits the user, tenant membership and exactly one attributed audit before returning 201', async () => {
-    const api = createApi({ db, logger, events });
+    const api = createApi({ db, logger, events, mediaEngine });
     const response = await api({
       method: 'POST',
       path: '/users',
@@ -122,7 +131,7 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
       .insertInto('tenant_membership')
       .values({ tenant_id: foreign.id, app_user_id: user.id, role_id: null })
       .execute();
-    const result = await createApi({ db, logger, events })({
+    const result = await createApi({ db, logger, events, mediaEngine })({
       method: 'GET',
       path: '/users',
       tenantId,
@@ -149,7 +158,7 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
     const bus = createEventBus(logger);
     const publish = vi.spyOn(bus, 'publish');
     const before = await db.selectFrom('audit_log').selectAll().execute();
-    const api = createApi({ db, logger, events: bus });
+    const api = createApi({ db, logger, events: bus, mediaEngine });
     for (const method of ['GET', 'POST']) {
       const response = await api({
         method,
@@ -180,7 +189,7 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
       db,
     );
     try {
-      const result = await createApi({ db, logger, events: bus })({
+      const result = await createApi({ db, logger, events: bus, mediaEngine })({
         method: 'POST',
         path: '/users',
         tenantId,
@@ -217,6 +226,7 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
       db,
       logger,
       events: bus,
+      mediaEngine,
       authenticate: async (request) =>
         request.headers.authorization === 'Bearer admin'
           ? { userId: actorId, activeTenantId: tenantId, tenantIds: [tenantId] }

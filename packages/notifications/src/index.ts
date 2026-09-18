@@ -10,11 +10,13 @@ import { type Kysely } from 'kysely';
 import { type Database } from '@slate/database';
 import type { Logger } from '@slate/observability';
 import {
+  createJobRegistry,
   enqueue,
-  type JobHandlerContext,
+  type EnqueueResult,
   type JobDefinition,
+  type JobHandlerContext,
   type JobEventPublisher,
-  type AnyJobDefinition,
+  type JobRegistryMap,
 } from '@slate/jobs';
 
 /** Stable identifier for a sent notification (provider-derived). */
@@ -118,32 +120,55 @@ export const NotificationJobDefinition: JobDefinition<NotificationPayload> = {
 };
 
 /**
- * Transactional enqueue for a notification.
+ * The notification job surface.
+ *
+ * The registry is the entire enqueue surface (ADR 004): declaring the delivery
+ * type here is what lets `enqueueNotification` enqueue it at all, and a host
+ * merges this map into its own before starting a worker, so a persisted row can
+ * only execute if a handler for it exists in trusted server code.
+ */
+export const NOTIFICATION_JOB_TYPES = createJobRegistry({
+  'notification.deliver': NotificationJobDefinition,
+});
+
+/** Server-derived enqueue context; a client supplies none of it (Section 13). */
+export interface EnqueueNotificationContext {
+  readonly tenantId: string;
+  readonly actorUserId?: string | undefined;
+  readonly requestId?: string | undefined;
+  readonly publisher?: JobEventPublisher | undefined;
+  /** Extra definitions to make visible; defaults to {@link NOTIFICATION_JOB_TYPES}. */
+  readonly registry?: JobRegistryMap | undefined;
+  /**
+   * Stable caller-chosen key: the same key with the same payload deduplicates,
+   * the same key with a different payload conflicts (ADR 004).
+   */
+  readonly idempotencyKey?: string | undefined;
+}
+
+/**
+ * Transactional enqueue for a notification: call it inside the domain
+ * transaction, so the write, the `background_job` row and exactly one
+ * `jobs.enqueued` audit row commit together — or not at all.
  */
 export async function enqueueNotification(
   trx: Kysely<Database>,
-  context: {
-    tenantId: string;
-    actorUserId?: string;
-    requestId?: string;
-    publisher?: JobEventPublisher;
-  },
+  context: EnqueueNotificationContext,
   payload: NotificationPayload,
-) {
+): Promise<EnqueueResult> {
   return enqueue(
     trx,
     {
+      registry: context.registry ?? NOTIFICATION_JOB_TYPES,
       tenantId: context.tenantId,
       actorUserId: context.actorUserId,
       requestId: context.requestId,
       publisher: context.publisher,
-      registry: {} as Record<string, AnyJobDefinition>,
     },
     {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      type: 'notification.deliver' as any,
+      type: 'notification.deliver',
       payload,
-      idempotencyKey: `notif:${payload.recipient}:${Date.now()}`,
+      idempotencyKey: context.idempotencyKey ?? `notif:${payload.recipient}:${Date.now()}`,
     },
   );
 }

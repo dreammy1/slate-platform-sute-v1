@@ -6,18 +6,22 @@ import {
   PostgresIntrospector,
   PostgresQueryCompiler,
 } from 'kysely';
-import type { Database } from '@slate/database';
-import { createLogger } from '@slate/observability';
-import { createApi, createEventBus } from './index.ts';
-import { MediaEngine } from '@slate/media';
-import { FileSystemStorageProvider } from '@slate/media';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Database } from '@slate/database';
+import { FileSystemStorageProvider, MediaEngine } from '@slate/media';
+import { createLogger } from '@slate/observability';
+import { createApi, createEventBus } from './index.ts';
 
 const tenantId = '11111111-1111-4111-8111-111111111111';
 const foreign = '22222222-2222-4222-8222-222222222222';
-const mediaRoot = mkdtempSync(join(tmpdir(), 'media-'));
+const mediaRoot = mkdtempSync(join(tmpdir(), 'slate-media-'));
+const logger = createLogger({ env: { SLATE_ENV: 'test' }, sink: vi.fn() });
+/**
+ * Storage is a required dependency of the API, exactly like the database, so
+ * every scaffold here is built with a real (temp-directory-backed) engine.
+ */
 const mediaEngine = new MediaEngine(new FileSystemStorageProvider(mediaRoot), logger);
 
 function database() {
@@ -49,7 +53,7 @@ describe('API pre-query rejection', () => {
     async ({ principal, requested, status }) => {
       const db = database();
       const transaction = vi.spyOn(db, 'transaction');
-      const api = createApi({ db, logger, events: createEventBus(logger) });
+      const api = createApi({ db, logger, events: createEventBus(logger), mediaEngine });
       try {
         expect(
           (await api({ method: 'GET', path: '/users', principal, tenantId: requested })).status,
@@ -72,7 +76,7 @@ describe('configuration key rejection', () => {
     const db = database();
     const transaction = vi.spyOn(db, 'transaction');
     try {
-      const api = createApi({ db, logger, events: createEventBus(logger) });
+      const api = createApi({ db, logger, events: createEventBus(logger), mediaEngine });
       await expect(
         api({
           method: 'PUT',

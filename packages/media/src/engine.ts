@@ -1,5 +1,5 @@
-import { Logger } from '@slate/observability';
-import { MediaStorageProvider, StorageMetadata } from './types';
+import type { Logger } from '@slate/observability';
+import type { MediaStorageProvider, StorageMetadata } from './types';
 import { getTenantPath, assertTenantBound } from './paths';
 
 export class MediaEngine {
@@ -8,7 +8,13 @@ export class MediaEngine {
     private readonly logger: Logger,
   ) {}
 
-  async uploadFile(tenantId: string, category: string, fileName: string, buffer: Buffer, mimeType: string): Promise<StorageMetadata> {
+  async uploadFile(
+    tenantId: string,
+    category: string,
+    fileName: string,
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<StorageMetadata> {
     const path = getTenantPath(tenantId, category, fileName);
     this.logger.debug('uploading media file', { tenantId, path });
     return this.provider.upload(path, buffer, mimeType);
@@ -19,12 +25,17 @@ export class MediaEngine {
     return this.provider.download(path);
   }
 
-  async getDownloadUrl(tenantId: string, path: string, expiresIn: number = 3600): Promise<string> {
+  async getDownloadUrl(tenantId: string, path: string, expiresIn = 3600): Promise<string> {
     assertTenantBound(tenantId, path);
     return this.provider.getSignedUrl(path, expiresIn);
   }
 
-  async getUploadUrl(tenantId: string, category: string, fileName: string, expiresIn: number = 3600): Promise<{ path: string; url: string }> {
+  async getUploadUrl(
+    tenantId: string,
+    category: string,
+    fileName: string,
+    expiresIn = 3600,
+  ): Promise<{ path: string; url: string }> {
     const path = getTenantPath(tenantId, category, fileName);
     const url = await this.provider.getUploadUrl(path, expiresIn);
     return { path, url };
