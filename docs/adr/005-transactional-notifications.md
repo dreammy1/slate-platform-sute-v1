@@ -1,6 +1,6 @@
 # 005 — Transactional Notifications
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-18
 - **Deciders:** Slate architecture, security review
 - **Tags:** notifications, jobs, providers, tenancy, Phase 2

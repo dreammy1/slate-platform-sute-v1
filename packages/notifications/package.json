@@ -1,0 +1,32 @@
+{
+  "name": "@slate/notifications",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-agnostic transactional notifications leveraging @slate/jobs as a durable outbox (SLATE-206). See docs/adr/005-transactional-notifications.md.",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@slate/database": "*",
+    "@slate/jobs": "*",
+    "@slate/observability": "*",
+    "kysely": "^0.29.6"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^5.0.1",
+    "vitest": "^5.0.1"
+  }
+}
