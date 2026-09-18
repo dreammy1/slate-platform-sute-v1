@@ -25,6 +25,7 @@ const CORE_TABLES = [
   'system_setting',
   'feature_flag',
   'background_job',
+  'media_files',
 ] as const;
 
 describe('parseMigrationFileName', () => {
@@ -73,6 +74,8 @@ describe('loadMigrations', () => {
       '0004',
       '0005',
       '0006',
+      '0007',
+      '0008',
     ]);
     expect(new Set(migrations.map((migration) => migration.id)).size).toBe(migrations.length);
   });
@@ -102,6 +105,8 @@ describe('loadMigrations', () => {
       'system_setting',
       'feature_flag',
       'background_job',
+      'notification_delivery_log',
+      'media_files',
     ]) {
       const createTable = sql.match(
         new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([\\s\\S]*?)\\);`),

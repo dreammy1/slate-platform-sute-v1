@@ -56,10 +56,13 @@ export interface ApiResponse {
   readonly status: number;
   readonly body: unknown;
 }
+import { FileSystemStorageProvider } from '@slate/media';
+
 export interface ApiOptions {
   readonly db: Kysely<Database>;
   readonly logger: Logger;
   readonly events: EventBus;
+  readonly mediaEngine?: MediaEngine;
 }
 
 class HttpError extends Error {
@@ -245,7 +248,7 @@ function isUniqueViolation(error: unknown): boolean {
  * authorization and uniqueness failures all come back as a response, so the
  * HTTP adapter stays a thin translation layer.
  */
-export function createApi({ db, logger, events }: ApiOptions) {
+export function createApi({ db, logger, events, mediaEngine: providedEngine }: ApiOptions) {
   return async (request: ApiRequest): Promise<ApiResponse> => {
     const resolved = resolveTenantContext({
       principal: request.principal,
@@ -253,6 +256,7 @@ export function createApi({ db, logger, events }: ApiOptions) {
     });
     if (!resolved.ok) return { status: resolved.status, body: errorBody(resolved.status) };
     const { tenantId } = resolved.context;
+    const mediaEngine = providedEngine ?? new MediaEngine(new FileSystemStorageProvider('/tmp'), logger);
 
     // A principal with no usable identity is rejected here, still before the
     // transaction: an empty user id could otherwise only fail inside the actor
@@ -464,8 +468,79 @@ export function createApi({ db, logger, events }: ApiOptions) {
               ),
             };
           }
+          // Media routes
+          case 'POST /media/presign': {
+            const body = request.body as any;
+            const { category, mimeType, originalName } = body ?? {};
+            if (
+              typeof category !== 'string' ||
+              !/^[a-z0-9_-]{1,64}$/.test(category) ||
+              typeof mimeType !== 'string' ||
+              typeof originalName !== 'string' ||
+              originalName.length > 255
+            ) throw new HttpError(400);
+            const id = crypto.randomUUID();
+            const { path, url } = await mediaEngine.getUploadUrl(tenantId, category, id);
+            return { response: { status: 200, body: { id, path, url, expiresIn: 3600 } }, notifications: [] };
+          }
+          case 'POST /media': {
+            const body = request.body as any;
+            const { id, category, mimeType, size, originalName } = body ?? {};
+            if (
+              typeof id !== 'string' ||
+              typeof category !== 'string' ||
+              typeof mimeType !== 'string' ||
+              typeof originalName !== 'string' ||
+              typeof size !== 'number' ||
+              !/^[a-z0-9_-]{1,64}$/.test(category) ||
+              originalName.length > 255 ||
+              size < 0 ||
+              size > 100 * 1024 * 1024
+            ) throw new HttpError(400);
+            const path = `storage/${tenantId}/${category}/${id}`;
+            const exists = await mediaEngine.exists(tenantId, path);
+            if (!exists) throw new HttpError(400);
+            const auditId = await audit('media.uploaded', 'media_file', id, { tenantId, path });
+            await trx.insertInto('media_files').values({
+              id,
+              tenant_id: tenantId,
+              storage_path: path,
+              mime_type: mimeType,
+              size: size.toString(),
+              original_name: originalName,
+            }).execute();
+            return {
+              response: { status: 201, body: { id, path, mimeType, size, originalName } },
+              notifications: afterWrite('media.uploaded', auditId, () =>
+                events.publish('media.uploaded', { tenantId, fileId: id, actorUserId: actor.id })
+              ),
+            };
+          }
+          case 'GET /media/:id': {
+            const mediaId = key!;
+            const row = await trx.selectFrom('media_files').selectAll().where('id', '=', mediaId).where('tenant_id', '=', tenantId).executeTakeFirst();
+            if (!row) throw new HttpError(404);
+            const url = await mediaEngine.getDownloadUrl(tenantId, row.storage_path);
+            return { response: { status: 200, body: { url, mimeType: row.mime_type, size: Number(row.size), originalName: row.original_name } }, notifications: [] };
+          }
+          case 'DELETE /media/:id': {
+            const mediaId = key!;
+            const row = await trx.selectFrom('media_files').selectAll().where('id', '=', mediaId).where('tenant_id', '=', tenantId).executeTakeFirst();
+            if (!row) throw new HttpError(404);
+            await mediaEngine.deleteFile(tenantId, row.storage_path);
+            const auditId = await audit('media.deleted', 'media_file', mediaId, { tenantId, path: row.storage_path });
+            await trx.deleteFrom('media_files').where('id', '=', mediaId).execute();
+            return {
+              response: { status: 204, body: null },
+              notifications: afterWrite('media.deleted', auditId, () =>
+                events.publish('media.deleted', { tenantId, fileId: mediaId, actorUserId: actor.id })
+              ),
+            };
+          }
+          // End of media routes
         }
       });
+
 
       // Past this point the transaction has committed. Only now may the audit
       // line be logged and the events be published, so a write that rolled back

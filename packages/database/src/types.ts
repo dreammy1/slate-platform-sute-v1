@@ -179,6 +179,21 @@ export interface NotificationDeliveryLogTable {
   readonly created_at: Generated<Date>;
 }
 
+/**
+ * A stored file asset (SLATE-207).
+ * Tracks the physical storage path and metadata.
+ */
+export interface MediaFileTable {
+  readonly id: Generated<string>;
+  readonly tenant_id: string;
+  readonly storage_path: string;
+  readonly mime_type: string;
+  readonly size: string;
+  readonly original_name: string;
+  readonly created_at: Generated<Date>;
+  readonly updated_at: Generated<Date>;
+}
+
 export interface SlateMigrationsTable {
   readonly id: string;
   readonly name: string;
@@ -200,6 +215,7 @@ export interface Database {
   readonly feature_flag: FeatureFlagTable;
   readonly background_job: BackgroundJobTable;
   readonly notification_delivery_log: NotificationDeliveryLogTable;
+  readonly media_files: MediaFileTable;
   readonly slate_migrations: SlateMigrationsTable;
 }
 
@@ -218,6 +234,7 @@ export const TENANT_OWNED_TABLES = [
   'feature_flag',
   'background_job',
   'notification_delivery_log',
+  'media_files',
 ] as const;
 
 /** Every table the scoped helper will automatically filter by `tenant_id`. */

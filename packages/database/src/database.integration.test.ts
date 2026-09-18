@@ -21,9 +21,10 @@ const CORE_TABLES = [
   'system_setting',
   'feature_flag',
   'background_job',
+  'media_files',
 ] as const;
 
-const MIGRATION_IDS = ['0001', '0002', '0003', '0004', '0005', '0006'] as const;
+const MIGRATION_IDS = ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008'] as const;
 
 /** A bound parameter that must never reach the log sink in plaintext. */
 const SECRET_PARAM = 'postgresql://svc:hunter2secret@db.internal:5432/slate';

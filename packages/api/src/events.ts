@@ -26,6 +26,14 @@ export interface CoreEvents {
   'jobs.succeeded': { tenantId: string; jobId: string; type: string; attempt: number };
   'jobs.failed': { tenantId: string; jobId: string; type: string; attempt: number };
   'jobs.retry_scheduled': { tenantId: string; jobId: string; type: string; attempt: number };
+  /**
+   * A media file was uploaded (SLATE-207).
+   */
+  'media.uploaded': { tenantId: string; fileId: string; actorUserId: string };
+  /**
+   * A media file was deleted (SLATE-207).
+   */
+  'media.deleted': { tenantId: string; fileId: string; actorUserId: string };
 }
 type Listener<K extends keyof CoreEvents> = (
   payload: Readonly<CoreEvents[K]>,

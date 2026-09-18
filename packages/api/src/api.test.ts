@@ -9,10 +9,17 @@ import {
 import type { Database } from '@slate/database';
 import { createLogger } from '@slate/observability';
 import { createApi, createEventBus } from './index.ts';
+import { MediaEngine } from '@slate/media';
+import { FileSystemStorageProvider } from '@slate/media';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const tenantId = '11111111-1111-4111-8111-111111111111';
 const foreign = '22222222-2222-4222-8222-222222222222';
-const logger = createLogger({ env: { SLATE_ENV: 'test' }, sink: vi.fn() });
+const mediaRoot = mkdtempSync(join(tmpdir(), 'media-'));
+const mediaEngine = new MediaEngine(new FileSystemStorageProvider(mediaRoot), logger);
+
 function database() {
   return new Kysely<Database>({
     dialect: {
