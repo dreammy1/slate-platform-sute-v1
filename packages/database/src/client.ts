@@ -89,23 +89,34 @@ export function redactQueryParameters(parameters: readonly unknown[]): readonly 
 }
 
 /**
- * Bridges Kysely's per-query hook (`log(event)`, the `onQuery` surface) into
- * the project logger. Query events are emitted at `debug` with the SQL and the
- * redacted parameters; failures are emitted at `error` with the same redaction.
+ * The opt-in parameter-omission mode (ADR 004).
+ *
+ * Queue payloads are JSONB parameters whose *shape* (not just their values) is
+ * tenant data, so heuristic redaction is not trusted for them: a queue
+ * connection can be built with `omitQueryParameters`, which drops the
+ * `parameters` field entirely — on the success path **and** on the error path.
+ * Unrelated connections keep the redacted-parameter behaviour by default.
  */
-export function createQueryLogger(logger: Logger): (event: LogEvent) => void {
+export function createQueryLogger(
+  logger: Logger,
+  options: { readonly omitParameters?: boolean | undefined } = {},
+): (event: LogEvent) => void {
   return (event: LogEvent) => {
     if (event.level === 'query') {
       logger.debug('sql query', {
         sql: event.query.sql,
-        parameters: redactQueryParameters(event.query.parameters),
+        ...(options.omitParameters
+          ? {}
+          : { parameters: redactQueryParameters(event.query.parameters) }),
         durationMs: Math.round(event.queryDurationMillis),
       });
       return;
     }
     logger.error('sql query failed', {
       sql: event.query.sql,
-      parameters: redactQueryParameters(event.query.parameters),
+      ...(options.omitParameters
+        ? {}
+        : { parameters: redactQueryParameters(event.query.parameters) }),
       err: event.error,
     });
   };
@@ -127,6 +138,12 @@ export interface CreateDatabaseOptions {
   readonly ssl?: boolean | undefined;
   /** Restricts unqualified queries to one schema (suite/request scoping). */
   readonly searchPath?: string | undefined;
+  /**
+   * Drops the `parameters` field from query logs entirely — both success and
+   * error records. Opt-in for queue connections whose JSONB parameters carry
+   * tenant data that must not reach the sink in any shape (ADR 004).
+   */
+  readonly omitQueryParameters?: boolean | undefined;
 }
 
 /**
@@ -162,7 +179,7 @@ export function createDatabase(options: CreateDatabaseOptions = {}): Kysely<Data
 
   return new Kysely<Database>({
     dialect: new PostgresDialect({ pool: new Pool(poolConfig) }),
-    log: createQueryLogger(logger),
+    log: createQueryLogger(logger, { omitParameters: options.omitQueryParameters === true }),
   });
 }
 

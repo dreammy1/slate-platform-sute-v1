@@ -133,6 +133,35 @@ export interface FeatureFlagTable {
   readonly updated_at: Generated<Date>;
 }
 
+/**
+ * A durable background job (SLATE-205, ADR 004).
+ *
+ * Rows are tenant-owned and only reachable through `db(tenantId)`. The payload
+ * is `jsonb` the database layer cannot interpret — `@slate/jobs` owns parsing
+ * and validation, so the type here stays `unknown` on purpose. Lifecycle
+ * metadata (`status`, `attempts`, lease columns) mirrors migration 0006; the
+ * runner in `@slate/jobs` is the only writer of lease/attempt columns.
+ */
+export interface BackgroundJobTable {
+  readonly id: Generated<string>;
+  readonly tenant_id: string;
+  readonly type: string;
+  readonly payload: unknown;
+  readonly idempotency_key: string;
+  readonly status: 'pending' | 'running' | 'succeeded' | 'failed';
+  readonly attempts: Generated<number>;
+  readonly max_attempts: number;
+  readonly available_at: Generated<Date>;
+  readonly lease_token: string | null;
+  readonly lease_expires_at: Date | null;
+  readonly actor_user_id: string | null;
+  readonly request_id: string | null;
+  readonly last_error_code: string | null;
+  readonly finished_at: Date | null;
+  readonly created_at: Generated<Date>;
+  readonly updated_at: Generated<Date>;
+}
+
 /** Migration ledger written by the runner in `src/runner.ts`. */
 export interface SlateMigrationsTable {
   readonly id: string;
@@ -153,6 +182,7 @@ export interface Database {
   readonly audit_log: AuditLogTable;
   readonly system_setting: SystemSettingTable;
   readonly feature_flag: FeatureFlagTable;
+  readonly background_job: BackgroundJobTable;
   readonly slate_migrations: SlateMigrationsTable;
 }
 
@@ -169,6 +199,7 @@ export const TENANT_OWNED_TABLES = [
   'audit_log',
   'system_setting',
   'feature_flag',
+  'background_job',
 ] as const;
 
 /** Every table the scoped helper will automatically filter by `tenant_id`. */

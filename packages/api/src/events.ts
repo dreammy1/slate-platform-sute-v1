@@ -1,3 +1,5 @@
+import type { JobEventPublisher } from '@slate/jobs';
+
 import type { Logger } from '@slate/observability';
 
 export interface CoreEvents {
@@ -15,6 +17,15 @@ export interface CoreEvents {
    * trusting a value carried on the bus.
    */
   'feature.flag.updated': { tenantId: string; key: string; actorUserId: string };
+  /**
+   * Job lifecycle events (SLATE-204, ADR 004), bridged from `@slate/jobs` by
+   * the host. Metadata only: `{ tenantId, jobId, type, attempt }` — never the
+   * payload, which may hold sensitive tenant data (Section 61).
+   */
+  'jobs.enqueued': { tenantId: string; jobId: string; type: string; attempt: number };
+  'jobs.succeeded': { tenantId: string; jobId: string; type: string; attempt: number };
+  'jobs.failed': { tenantId: string; jobId: string; type: string; attempt: number };
+  'jobs.retry_scheduled': { tenantId: string; jobId: string; type: string; attempt: number };
 }
 type Listener<K extends keyof CoreEvents> = (
   payload: Readonly<CoreEvents[K]>,
@@ -49,3 +60,17 @@ export function createEventBus(logger: Logger) {
   };
 }
 export type EventBus = ReturnType<typeof createEventBus>;
+
+/**
+ * Bridges `@slate/jobs` lifecycle events onto this bus (ADR 004): the host
+ * passes the returned adapter as the worker/enqueue publisher. Payloads are
+ * already metadata-only; publishing stays best-effort exactly like every other
+ * subscriber (a failed bridge listener never changes job state).
+ */
+export function bridgeJobEvents(events: EventBus): JobEventPublisher {
+  return {
+    publish(event, payload) {
+      void events.publish(event, payload);
+    },
+  };
+}

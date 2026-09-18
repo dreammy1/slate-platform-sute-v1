@@ -15,6 +15,12 @@ function pathFor(request: IncomingMessage): string {
   return withoutQuery === '' ? '/' : withoutQuery;
 }
 
+/** Decoded query parameters; duplicates join, which the routes re-validate. */
+function queryFor(request: IncomingMessage): Record<string, string> {
+  const raw = request.url?.split('?')[1] ?? '';
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+
 /**
  * Verbs a known path accepts, for the `Allow` header on a 405.
  *
@@ -24,8 +30,10 @@ function pathFor(request: IncomingMessage): string {
 function allowedVerbs(path: string): string | undefined {
   const normalized = path.length > 1 ? path.replace(/\/+$/, '') : path;
   if (normalized === '/users') return 'GET, POST';
-  if (normalized === '/settings' || normalized === '/features') return 'GET';
+  if (normalized === '/settings' || normalized === '/features' || normalized === '/jobs')
+    return 'GET';
   if (normalized.startsWith('/settings/') || normalized.startsWith('/features/')) return 'PUT';
+  if (normalized.startsWith('/jobs/')) return 'GET';
   return undefined;
 }
 
@@ -78,7 +86,7 @@ export function createHttpHandler(options: HttpOptions) {
           return;
         }
       }
-      send(await api({ method, path, principal, tenantId, body }));
+      send(await api({ method, path, principal, tenantId, query: queryFor(request), body }));
     } catch {
       if (!response.headersSent) send({ status: 500, body: { error: 'Internal server error' } });
       else response.end();

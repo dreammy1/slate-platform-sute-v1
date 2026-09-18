@@ -1,19 +1,24 @@
-import { createServer } from 'node:http';
-import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Kysely, sql } from 'kysely';
 import { createDatabase, closeDatabase, runMigrations, type Database } from '@slate/database';
 import { createIsolatedDatabase, integrationEnabled, type IsolatedDatabase } from '@slate/testing';
 import { createLogger } from '@slate/observability';
 import { createApi } from './api.ts';
 import { createEventBus } from './events.ts';
 import { createHttpHandler } from './http.ts';
+import { createServer } from 'node:http';
 
 describe.skipIf(!integrationEnabled())('API transactional user creation', () => {
   let isolated: IsolatedDatabase;
   let db: Kysely<Database>;
   let tenantId: string;
   let actorId: string;
-  const logger = createLogger({ env: { SLATE_ENV: 'test' }, sink: vi.fn() });
+  const logger = createLogger({
+    env: { SLATE_ENV: 'test' },
+    sink: () => {
+      /* test no-op */
+    },
+  });
   const events = createEventBus(logger);
   beforeAll(async () => {
     isolated = await createIsolatedDatabase({ schemaPrefix: 'slate_api' });

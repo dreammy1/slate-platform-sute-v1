@@ -22,4 +22,3 @@
   permission denial/revocation, tenant isolation, audit rollback and post-commit events,
   and the full background job lifecycle.
 - Blockers: None. The in-process event bus remains best-effort, not a durable outbox.
-

@@ -24,6 +24,7 @@ const CORE_TABLES = [
   'audit_log',
   'system_setting',
   'feature_flag',
+  'background_job',
 ] as const;
 
 describe('parseMigrationFileName', () => {
@@ -71,6 +72,7 @@ describe('loadMigrations', () => {
       '0003',
       '0004',
       '0005',
+      '0006',
     ]);
     expect(new Set(migrations.map((migration) => migration.id)).size).toBe(migrations.length);
   });
@@ -99,9 +101,10 @@ describe('loadMigrations', () => {
       'audit_log',
       'system_setting',
       'feature_flag',
+      'background_job',
     ]) {
       const createTable = sql.match(
-        new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([^;]+)\\);`),
+        new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([\\s\\S]*?)\\);`),
       )?.[1];
       expect(createTable).toContain('tenant_id uuid NOT NULL');
     }

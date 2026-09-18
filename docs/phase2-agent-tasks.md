@@ -38,8 +38,7 @@ assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr
 | SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests                    |
 | SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit      |
 | SLATE-205 | agent:backend + agent:security | background jobs & task queue                                          | Enqueue → Isolation → Recovery → Audit |
-| SLATE-206 | agent:backend + agent:security | transactional notifications                                             | Enqueue → Deliver → Retry → Audit     |
-
+| SLATE-206 | agent:backend + agent:security | transactional notifications                                           | Enqueue → Deliver → Retry → Audit      |
 
 ## SLATE-206 — Transactional Notifications
 

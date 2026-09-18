@@ -21,6 +21,7 @@
   "dependencies": {
     "@slate/auth": "*",
     "@slate/database": "*",
+    "@slate/jobs": "*",
     "@slate/observability": "*",
     "@slate/settings": "*",
     "@slate/tenant-context": "*",

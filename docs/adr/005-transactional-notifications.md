@@ -14,17 +14,18 @@ Following the completion of SLATE-205 (Background Jobs), we now have a durable, 
 
 ## Architectural choices
 
-| Option | Integration | Reliability | Decision |
-| --- | --- | --- | --- |
-| Synchronous API calls | Simple `fetch` in handler | High risk of domain rollback on provider timeout; no native retry | Reject |
-| Separate Notification Service | Dedicated service + MQ | High reliability; adds significant infrastructure complexity | Defer |
-| Jobs-backed Outbox | Enqueue `@slate/notifications` job via `@slate/jobs` | Atomic persistence with domain; leverages existing retry/recovery logic | **Propose for SLATE-206** |
+| Option                        | Integration                                          | Reliability                                                             | Decision                  |
+| ----------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------- |
+| Synchronous API calls         | Simple `fetch` in handler                            | High risk of domain rollback on provider timeout; no native retry       | Reject                    |
+| Separate Notification Service | Dedicated service + MQ                               | High reliability; adds significant infrastructure complexity            | Defer                     |
+| Jobs-backed Outbox            | Enqueue `@slate/notifications` job via `@slate/jobs` | Atomic persistence with domain; leverages existing retry/recovery logic | **Propose for SLATE-206** |
 
 ## Proposed decision
 
 ### Provider-Agnostic Delivery
 
 Create `packages/notifications` (`@slate/notifications`). This package will define a `NotificationProvider` interface:
+
 - `sendEmail(to: string, template: string, params: record): Promise<MessageId>`
 - `sendSms(to: string, body: string): Promise<MessageId>`
 
@@ -33,10 +34,11 @@ Concrete implementations for providers (e.g., SendGrid, Twilio, AWS SES) will be
 ### Integration with `@slate/jobs`
 
 The notification flow follows this sequence:
+
 1. **Enqueue**: The domain handler calls `notifications.enqueue(tenantId, type, payload)`. This internally calls `jobs.enqueue` with a `notification.deliver` job type.
 2. **Execute**: The `@slate/jobs` worker picks up the job and invokes the `@slate/notifications` handler.
 3. **Deliver**: The handler resolves the template, selects the active provider for the tenant, and attempts delivery.
-4. **Handle Outcome**: 
+4. **Handle Outcome**:
    - Success: Job marks as succeeded.
    - Transient Failure (e.g., 429, 503): Job schedules retry via existing backoff logic.
    - Permanent Failure (e.g., 400 Invalid Email): Job marks as failed immediately to avoid useless retries.
@@ -56,6 +58,7 @@ The notification flow follows this sequence:
 ## Acceptance and validation
 
 The SLATE-206 contract must prove:
+
 - Atomic enqueue of notification alongside domain write.
 - Successful delivery via a mocked provider.
 - Retry logic triggered by provider transient errors.

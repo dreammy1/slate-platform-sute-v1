@@ -38,6 +38,7 @@ import {
   type FeatureFlagKey,
   type SettingValue,
 } from '@slate/settings';
+import { getJob, listJobs, JobPayloadError } from '@slate/jobs';
 import type { Logger } from '@slate/observability';
 import type { EventBus } from './events.ts';
 
@@ -47,6 +48,8 @@ export interface ApiRequest {
   /** Injected by trusted session middleware, NEVER deserialized from the request body. */
   readonly principal: AuthenticatedPrincipal | undefined;
   readonly tenantId: string | undefined;
+  /** Decoded query parameters; read routes validate them per contract. */
+  readonly query?: Readonly<Record<string, string>> | undefined;
   readonly body?: unknown;
 }
 export interface ApiResponse {
@@ -85,6 +88,16 @@ function inputUser(body: unknown): { email: string; display_name: string } {
   )
     throw new HttpError(400);
   return { email: email.toLowerCase(), display_name: name.trim() };
+}
+
+/**
+ * Reads an optional positive-integer query parameter. Anything else is a 400:
+ * `@slate/jobs` re-validates the bound, this catches malformed shapes first.
+ */
+function optionalInteger(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw)) throw new HttpError(400);
+  return Number(raw);
 }
 
 /**
@@ -128,6 +141,8 @@ export const ROUTE_PERMISSIONS = {
   'PUT /settings/:key': 'settings.write',
   'GET /features': 'features.read',
   'PUT /features/:key': 'features.write',
+  'GET /jobs': 'jobs.read',
+  'GET /jobs/:id': 'jobs.read',
 } as const;
 
 export type RouteKey = keyof typeof ROUTE_PERMISSIONS;
@@ -169,6 +184,17 @@ export function matchRoute(request: ApiRequest): RouteMatch {
     return { ok: false, status: 405 };
   }
 
+  if (path === '/jobs') {
+    if (method === 'GET') return { ok: true, route: 'GET /jobs', key: undefined };
+    return { ok: false, status: 405 };
+  }
+
+  const job = /^\/jobs\/(.+)$/.exec(path);
+  if (job !== null) {
+    if (method !== 'GET') return { ok: false, status: 405 };
+    return { ok: true, route: 'GET /jobs/:id', key: job[1] };
+  }
+
   const setting = /^\/settings\/(.+)$/.exec(path);
   if (setting !== null) {
     if (method !== 'PUT') return { ok: false, status: 405 };
@@ -202,7 +228,8 @@ function isSettingInputError(error: unknown): boolean {
   return (
     error instanceof SettingKeyError ||
     error instanceof SettingValueError ||
-    error instanceof FeatureFlagKeyError
+    error instanceof FeatureFlagKeyError ||
+    error instanceof JobPayloadError
   );
 }
 
@@ -382,6 +409,25 @@ export function createApi({ db, logger, events }: ApiOptions) {
           case 'GET /features': {
             const features = await configuration.flags.resolveFeatureFlags({ tenantId });
             return { response: { status: 200, body: { features } }, notifications: [] };
+          }
+
+          case 'GET /jobs': {
+            const query = request.query ?? {};
+            const page = await listJobs(trx, {
+              tenantId,
+              limit: optionalInteger(query['limit']),
+              status: query['status'],
+              cursor: query['cursor'],
+            });
+            return { response: { status: 200, body: page }, notifications: [] };
+          }
+
+          case 'GET /jobs/:id': {
+            // A foreign job id and a missing one are the same 404; the summary
+            // allowlist never carries payload, idempotency key or lease data.
+            const job = await getJob(trx, { tenantId, jobId: key! });
+            if (job === null) throw new HttpError(404);
+            return { response: { status: 200, body: { job } }, notifications: [] };
           }
 
           case 'PUT /features/:key': {
