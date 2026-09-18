@@ -34,6 +34,17 @@ export interface CoreEvents {
    * A media file was deleted (SLATE-207).
    */
   'media.deleted': { tenantId: string; fileId: string; actorUserId: string };
+  /**
+   * A search document was indexed or replaced (SLATE-208). Carries WHICH
+   * document changed, never its text: a document body is tenant content that
+   * must not travel on the bus (Section 61).
+   */
+  'search.indexed': { tenantId: string; entity: string; actorUserId: string };
+  /**
+   * A tenant-scoped search query was executed (SLATE-208). Metadata only: the
+   * query text stays in the audit row, never on the bus.
+   */
+  'search.query': { tenantId: string; entity: string; actorUserId: string };
 }
 type Listener<K extends keyof CoreEvents> = (
   payload: Readonly<CoreEvents[K]>,

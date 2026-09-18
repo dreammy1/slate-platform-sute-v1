@@ -41,6 +41,13 @@ import {
 } from '@slate/settings';
 import { getJob, listJobs, JobPayloadError } from '@slate/jobs';
 import { MediaEngine } from '@slate/media';
+import {
+  assertSearchEntity,
+  MAX_SEARCH_LIMIT,
+  postgresSearchEngine,
+  SearchInputError,
+  type SearchEngine,
+} from '@slate/search';
 import type { Logger } from '@slate/observability';
 import type { EventBus } from './events.ts';
 
@@ -69,6 +76,8 @@ export interface ApiOptions {
    * directory the moment a host forgot to configure storage (ADR 006).
    */
   readonly mediaEngine: MediaEngine;
+  /** Injected; defaults to the PostgreSQL engine of `@slate/search` (ADR 007). */
+  readonly searchEngine?: SearchEngine;
 }
 
 class HttpError extends Error {
@@ -244,6 +253,44 @@ function inputMediaUpload(body: unknown): {
     originalName: readOriginalName(fields['originalName']),
   };
 }
+
+/** The longest title and body a search document may carry (0009 CHECKs). */
+const MAX_SEARCH_TITLE_LENGTH = 255;
+const MAX_SEARCH_BODY_LENGTH = 20_000;
+
+/**
+ * Reads the body of `POST /search/:entity`.
+ *
+ * `recordId` is the id of the row the text describes, re-validated as a UUID so
+ * it can never smuggle a path or a SQL fragment; the tenant comes from the
+ * resolved context (Section 13).
+ */
+function inputSearchIndex(body: unknown): { recordId: string; title: string; body: string } {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(400);
+  const fields = body as Record<string, unknown>;
+  if (Object.keys(fields).some((key) => !['recordId', 'title', 'body'].includes(key)))
+    throw new HttpError(400);
+  const recordId = fields['recordId'];
+  const title = fields['title'];
+  const text = fields['body'];
+  if (typeof recordId !== 'string' || !UUID.test(recordId)) throw new HttpError(400);
+  if (typeof title !== 'string' || title.trim() === '' || title.length > MAX_SEARCH_TITLE_LENGTH)
+    throw new HttpError(400);
+  if (typeof text !== 'string' || text.length > MAX_SEARCH_BODY_LENGTH) throw new HttpError(400);
+  return { recordId, title, body: text };
+}
+
+/** Validates the `q`/`limit` pair of `GET /search/:entity` before any query. */
+function inputSearchQuery(query: Readonly<Record<string, string>> | undefined): {
+  q: string;
+  limit: number | undefined;
+} {
+  const raw = query?.['q'] ?? '';
+  if (raw.trim() === '' || raw.length > 200) throw new HttpError(400);
+  const limit = optionalInteger(query?.['limit']);
+  if (limit !== undefined && (limit < 1 || limit > MAX_SEARCH_LIMIT)) throw new HttpError(400);
+  return { q: raw, limit };
+}
 /** The routes the scaffold serves, each with the permission key it requires. */
 export const ROUTE_PERMISSIONS = {
   'GET /users': 'users.read',
@@ -258,6 +305,8 @@ export const ROUTE_PERMISSIONS = {
   'POST /media': 'media.upload',
   'GET /media/:id': 'media.read',
   'DELETE /media/:id': 'media.delete',
+  'POST /search/:entity': 'search.write',
+  'GET /search/:entity': 'search.read',
 } as const;
 
 export type RouteKey = keyof typeof ROUTE_PERMISSIONS;
@@ -332,6 +381,15 @@ export function matchRoute(request: ApiRequest): RouteMatch {
     return { ok: false, status: 405 };
   }
 
+  // Search is per entity: index it (POST) or query it (GET).
+  const search = /^\/search\/([^/]+)$/.exec(path);
+  if (search !== null) {
+    const key = decodeURIComponent(search[1]!);
+    if (method === 'GET') return { ok: true, route: 'GET /search/:entity', key };
+    if (method === 'POST') return { ok: true, route: 'POST /search/:entity', key };
+    return { ok: false, status: 405 };
+  }
+
   const setting = /^\/settings\/(.+)$/.exec(path);
   if (setting !== null) {
     if (method !== 'PUT') return { ok: false, status: 405 };
@@ -366,7 +424,8 @@ function isSettingInputError(error: unknown): boolean {
     error instanceof SettingKeyError ||
     error instanceof SettingValueError ||
     error instanceof FeatureFlagKeyError ||
-    error instanceof JobPayloadError
+    error instanceof JobPayloadError ||
+    error instanceof SearchInputError
   );
 }
 
@@ -382,7 +441,13 @@ function isUniqueViolation(error: unknown): boolean {
  * authorization and uniqueness failures all come back as a response, so the
  * HTTP adapter stays a thin translation layer.
  */
-export function createApi({ db, logger, events, mediaEngine }: ApiOptions) {
+export function createApi({
+  db,
+  logger,
+  events,
+  mediaEngine,
+  searchEngine: search = postgresSearchEngine,
+}: ApiOptions) {
   return async (request: ApiRequest): Promise<ApiResponse> => {
     const resolved = resolveTenantContext({
       principal: request.principal,
@@ -408,6 +473,11 @@ export function createApi({ db, logger, events, mediaEngine }: ApiOptions) {
       // Reject invalid configuration keys before even opening a transaction.
       if (route === 'PUT /settings/:key') assertSettingKey(key!);
       if (route === 'PUT /features/:key') assertKnownFeatureFlag(key!);
+      // A search entity is a routing input, so it is validated here too: an
+      // invalid one never reaches the actor lookup, let alone the index.
+      if (route === 'GET /search/:entity' || route === 'POST /search/:entity')
+        assertSearchEntity(key!);
+      if (route === 'GET /search/:entity') inputSearchQuery(request.query);
       const outcome = await db.transaction().execute(async (trx): Promise<CommittedOutcome> => {
         // The tenant must belong to a real organization before anything is read
         // or written for it: a missing row is never silently tolerated.
@@ -694,6 +764,51 @@ export function createApi({ db, logger, events, mediaEngine }: ApiOptions) {
             };
           }
           // End of media routes
+
+          case 'POST /search/:entity': {
+            // Index (upsert) one document and audit it in the same transaction:
+            // a search index row that exists without its audit line is as wrong
+            // as an audit line for a row that was rolled back.
+            const input = inputSearchIndex(request.body);
+            const indexed = await search.index(trx, {
+              tenantId,
+              entity: key!,
+              recordId: input.recordId,
+              title: input.title,
+              body: input.body,
+            });
+            const auditId = await audit('search.indexed', 'search_document', indexed.id, {
+              entity: indexed.entity,
+              recordId: indexed.recordId,
+            });
+            return {
+              // 201 only distinguishes nothing: an upsert answers the same shape
+              // whether it created the row or replaced its text.
+              response: {
+                status: 201,
+                body: { entity: indexed.entity, recordId: indexed.recordId },
+              },
+              // The bus hears WHICH document changed, never its text (Section 61).
+              notifications: afterWrite('search.indexed', auditId, () =>
+                events.publish('search.indexed', {
+                  tenantId,
+                  entity: indexed.entity,
+                  actorUserId: actor.id,
+                }),
+              ),
+            };
+          }
+          case 'GET /search/:entity': {
+            // Ranked, tenant-scoped full-text query. The audit row makes every
+            // read attributable, in the same transaction as the read itself.
+            const { q, limit } = inputSearchQuery(request.query);
+            const hits = await search.query(trx, { tenantId, entity: key!, q, limit });
+            await audit('search.query', 'search_document', key!, { entity: key!, query: q });
+            return {
+              response: { status: 200, body: { entity: key!, query: q, count: hits.length, hits } },
+              notifications: [],
+            };
+          }
         }
       });
 

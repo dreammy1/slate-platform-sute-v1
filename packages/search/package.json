@@ -1,16 +1,14 @@
 {
-  "name": "@slate/api",
+  "name": "@slate/search",
   "version": "0.1.0",
   "private": true,
-  "description": "Tenant-aware HTTP scaffold, transactional audit and in-process events (SLATE-203).",
+  "description": "Provider-agnostic search abstraction backed by PostgreSQL full-text search (SLATE-208). See docs/adr/007-search-and-health-checks.md.",
   "type": "module",
   "files": [
-    "src",
-    "openapi.json"
+    "src"
   ],
   "exports": {
-    ".": "./src/index.ts",
-    "./openapi": "./openapi.json"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "npm run test:unit && npm run test:integration",
@@ -19,14 +17,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@slate/auth": "*",
     "@slate/database": "*",
-    "@slate/jobs": "*",
     "@slate/observability": "*",
-    "@slate/settings": "*",
-    "@slate/tenant-context": "*",
-    "@slate/media": "*",
-    "@slate/search": "*",
     "kysely": "^0.29.6"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '@slate/tenant-context';
 import { createApi, type ApiOptions, type ApiResponse } from './api.ts';
+import { HEALTH_LIVE_PATH, healthLive, healthReady, isHealthRoute } from './health.ts';
 
 export interface HttpOptions extends ApiOptions {
   /** Verify the session server-side. Do not build a principal from client-supplied IDs. */
@@ -36,6 +37,7 @@ function allowedVerbs(path: string): string | undefined {
   if (normalized.startsWith('/jobs/')) return 'GET';
   if (normalized === '/media' || normalized === '/media/presign') return 'POST';
   if (normalized.startsWith('/media/')) return 'GET, DELETE';
+  if (normalized.startsWith('/health/')) return 'GET';
 
   return undefined;
 }
@@ -55,12 +57,26 @@ export function createHttpHandler(options: HttpOptions) {
       response.end(JSON.stringify(result.body));
     };
     try {
+      const method = request.method ?? 'GET';
+      const path = pathFor(request);
+      // Path comparison is on the normalized form, so `/health/live/` is the
+      // same probe as `/health/live` (routing normalizes the same way).
+      const normalizedPath = path.length > 1 ? path.replace(/\/+$/, '') : path;
+      // Health probes bypass authentication: an orchestrator has no session,
+      // and readiness must stay observable precisely while the database - the
+      // thing readiness checks - is broken (ADR 007).
+      if (isHealthRoute(normalizedPath)) {
+        if (method !== 'GET') {
+          send({ status: 405, body: { error: 'Request rejected' } });
+          return;
+        }
+        send(normalizedPath === HEALTH_LIVE_PATH ? healthLive() : await healthReady(options.db));
+        return;
+      }
       const principal = await options.authenticate(request);
       const tenantHeader = request.headers['x-tenant-id'];
       // Duplicate tenant headers must not be interpreted as a tenant selection.
       const tenantId = Array.isArray(tenantHeader) ? tenantHeader.join(',') : tenantHeader;
-      const method = request.method ?? 'GET';
-      const path = pathFor(request);
       let body: unknown;
       // A mutation may carry a body on POST or PUT; a GET never does.
       if (method === 'POST' || method === 'PUT' || method === 'PATCH') {

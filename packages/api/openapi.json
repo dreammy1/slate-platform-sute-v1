@@ -545,6 +545,203 @@
           "500": { "$ref": "#/components/responses/ServerError" }
         }
       }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "healthLive",
+        "summary": "Liveness probe",
+        "description": "Unauthenticated by design (ADR 007): an orchestrator has no session, and liveness must not depend on any dependency, so a broken database cannot get a healthy process killed. The body discloses no configuration or version detail.",
+        "responses": {
+          "200": {
+            "description": "The process is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": { "status": { "type": "string", "enum": ["live"] } }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Only GET is served.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Request rejected" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "healthReady",
+        "summary": "Readiness probe",
+        "description": "Unauthenticated by design (ADR 007). 200 only when every checked dependency (currently the database) answers; 503 otherwise. A failing dependency is reported in the logs, never in the response body.",
+        "responses": {
+          "200": {
+            "description": "Every dependency is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": { "status": { "type": "string", "enum": ["ready"] } }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Only GET is served.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Request rejected" }
+              }
+            }
+          },
+          "503": {
+            "description": "At least one dependency is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": { "status": { "type": "string", "enum": ["unavailable"] } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/{entity}": {
+      "get": {
+        "operationId": "querySearch",
+        "summary": "Query the resolved tenant's search index",
+        "description": "Requires the `search.read` permission. PostgreSQL full-text search (ADR 007): the match and the tenant predicate are the same query, so another tenant's documents are not expressible, and the query string is always a bound parameter. Ranking is `ts_rank` with ties broken on `recordId`, so identical data answers in the same order. Every query writes exactly one `search.query` audit row in the same transaction.",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "description": "Dotted, namespaced entity (for example `docs.page`). An invalid entity is a 400 and no query is issued.",
+            "schema": { "type": "string", "maxLength": 64 }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked hits; a hit never carries the stored body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["entity", "query", "count", "hits"],
+                  "properties": {
+                    "entity": { "type": "string" },
+                    "query": { "type": "string" },
+                    "count": { "type": "integer" },
+                    "hits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["entity", "recordId", "title", "rank"],
+                        "properties": {
+                          "entity": { "type": "string" },
+                          "recordId": { "type": "string", "format": "uuid" },
+                          "title": { "type": "string" },
+                          "rank": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      },
+      "post": {
+        "operationId": "indexSearch",
+        "summary": "Index (upsert) one document for the resolved tenant",
+        "description": "Requires the `search.write` permission. `recordId` identifies the row the text describes and is re-validated as a UUID, so it can never smuggle a path or a SQL fragment; re-indexing the same (entity, recordId) replaces its text. The document and exactly one `search.indexed` audit row commit in a single transaction; `search.indexed` is published afterwards carrying the entity only, never the text.",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "maxLength": 64 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["recordId", "title", "body"],
+                "properties": {
+                  "recordId": { "type": "string", "format": "uuid" },
+                  "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+                  "body": { "type": "string", "maxLength": 20000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The document is indexed and audited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["entity", "recordId"],
+                  "properties": {
+                    "entity": { "type": "string" },
+                    "recordId": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/UnauthorizedTenantContext" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "415": {
+            "description": "The Content-Type is not application/json (HTTP adapter).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "Expected application/json" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
     }
   }
 }

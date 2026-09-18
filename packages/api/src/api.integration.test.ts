@@ -271,3 +271,281 @@ describe.skipIf(!integrationEnabled())('API transactional user creation', () => 
     }
   });
 });
+
+describe.skipIf(!integrationEnabled())('search and health (SLATE-208)', () => {
+  let isolated: IsolatedDatabase;
+  let db: Kysely<Database>;
+  let tenantA = '';
+  let tenantB = '';
+  let adminId = '';
+  let memberId = '';
+  const logger = createLogger({ env: { SLATE_ENV: 'test' }, sink: () => undefined });
+  const mediaEngine = new MediaEngine(
+    new FileSystemStorageProvider(mkdtempSync(join(tmpdir(), 'slate-search-'))),
+    logger,
+  );
+  const recordOne = '33333333-3333-4333-8333-333333333333';
+  const recordTwo = '44444444-4444-4444-8444-444444444444';
+
+  /** A principal that may act in `tenant` (both tenants for the admin). */
+  const principalFor = (userId: string, tenant: string = tenantA) => ({
+    userId,
+    activeTenantId: tenant,
+    tenantIds: tenant === tenantB ? [tenantA, tenantB] : [tenantA],
+  });
+
+  beforeAll(async () => {
+    isolated = await createIsolatedDatabase({ schemaPrefix: 'slate_search_api' });
+    db = createDatabase({
+      url: isolated.url,
+      searchPath: isolated.schema,
+      env: { SLATE_ENV: 'test' },
+      logger,
+    });
+    await runMigrations(db);
+
+    const org = await db
+      .insertInto('organization')
+      .values({ name: 'Acme', slug: 'acme' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const tenants = await db
+      .insertInto('tenant')
+      .values([
+        { organization_id: org.id, name: 'A', slug: 'a' },
+        { organization_id: org.id, name: 'B', slug: 'b' },
+      ])
+      .returning('id')
+      .execute();
+    tenantA = tenants[0]!.id;
+    tenantB = tenants[1]!.id;
+    const users = await db
+      .insertInto('app_user')
+      .values([
+        { email: 'search-admin@example.test', display_name: 'Admin', password_hash: '' },
+        { email: 'search-member@example.test', display_name: 'Member', password_hash: '' },
+      ])
+      .returning('id')
+      .execute();
+    adminId = users[0]!.id;
+    memberId = users[1]!.id;
+
+    const adminRole = await db
+      .insertInto('role')
+      .values({ tenant_id: tenantA, name: 'admin' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('tenant_membership')
+      .values({ tenant_id: tenantA, app_user_id: adminId, role_id: adminRole.id })
+      .execute();
+    await db
+      .insertInto('tenant_membership')
+      .values({ tenant_id: tenantA, app_user_id: memberId, role_id: null })
+      .execute();
+    for (const key of ['search.read', 'search.write']) {
+      const permission = await db
+        .insertInto('permission')
+        .values({ tenant_id: tenantA, key })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await db
+        .insertInto('role_permission')
+        .values({ role_id: adminRole.id, permission_id: permission.id })
+        .execute();
+    }
+
+    // The admin is only a reader in tenant B, which is what the isolation test
+    // needs: authorized there, yet unable to see tenant A's documents.
+    const readerRole = await db
+      .insertInto('role')
+      .values({ tenant_id: tenantB, name: 'reader' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('tenant_membership')
+      .values({ tenant_id: tenantB, app_user_id: adminId, role_id: readerRole.id })
+      .execute();
+    const readPermission = await db
+      .insertInto('permission')
+      .values({ tenant_id: tenantB, key: 'search.read' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('role_permission')
+      .values({ role_id: readerRole.id, permission_id: readPermission.id })
+      .execute();
+  });
+
+  afterAll(async () => {
+    if (db) await closeDatabase(db);
+    if (isolated) await isolated.dispose();
+  });
+
+  const searchAuditCount = async () =>
+    (
+      await db
+        .selectFrom('audit_log')
+        .select('id')
+        .where('tenant_id', '=', tenantA)
+        .where('action', 'like', 'search.%')
+        .execute()
+    ).length;
+
+  it('indexes a document with exactly one audit row and a post-commit event', async () => {
+    const announced: string[] = [];
+    const bus = createEventBus(logger);
+    bus.subscribe('search.indexed', (payload) => {
+      announced.push(payload.entity);
+    });
+    const api = createApi({ db, logger, events: bus, mediaEngine });
+
+    const response = await api({
+      method: 'POST',
+      path: '/search/docs.page',
+      tenantId: tenantA,
+      principal: principalFor(adminId),
+      body: {
+        recordId: recordOne,
+        title: 'Quantum notes',
+        body: 'Entanglement and superposition.',
+      },
+    });
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({ entity: 'docs.page', recordId: recordOne });
+    expect(announced).toEqual(['docs.page']);
+
+    // The audit row carries the entity and the record id, never the text.
+    const audits = await db
+      .selectFrom('audit_log')
+      .select(['action', 'resource_type', 'payload'])
+      .where('tenant_id', '=', tenantA)
+      .where('action', '=', 'search.indexed')
+      .execute();
+    expect(audits).toEqual([
+      {
+        action: 'search.indexed',
+        resource_type: 'search_document',
+        payload: { entity: 'docs.page', recordId: recordOne },
+      },
+    ]);
+  });
+
+  it('answers a tenant-scoped ranked query and audits the read', async () => {
+    const api = createApi({ db, logger, events: createEventBus(logger), mediaEngine });
+    await api({
+      method: 'POST',
+      path: '/search/docs.page',
+      tenantId: tenantA,
+      principal: principalFor(adminId),
+      body: { recordId: recordTwo, title: 'Alpha beta', body: 'Gamma and delta.' },
+    });
+    const before = await searchAuditCount();
+
+    const response = await api({
+      method: 'GET',
+      path: '/search/docs.page',
+      tenantId: tenantA,
+      principal: principalFor(adminId),
+      query: { q: 'quantum', limit: '10' },
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ entity: 'docs.page', query: 'quantum', count: 1 });
+    // Every read leaves exactly one attributable audit row.
+    expect(await searchAuditCount()).toBe(before + 1);
+
+    // A member without the permission never reaches the index.
+    await expect(
+      api({
+        method: 'GET',
+        path: '/search/docs.page',
+        tenantId: tenantA,
+        principal: principalFor(memberId),
+        query: { q: 'quantum' },
+      }),
+    ).resolves.toEqual({ status: 403, body: { error: 'Request rejected' } });
+
+    // Authorized in tenant B, the same admin still sees nothing of tenant A's.
+    expect(
+      await api({
+        method: 'GET',
+        path: '/search/docs.page',
+        tenantId: tenantB,
+        principal: principalFor(adminId, tenantB),
+        query: { q: 'quantum' },
+      }),
+    ).toMatchObject({ status: 200, body: { count: 0, hits: [] } });
+  });
+
+  it('serves the probes without authentication and refuses other verbs', async () => {
+    const handler = createHttpHandler({
+      db,
+      logger,
+      events: createEventBus(logger),
+      mediaEngine,
+      authenticate: async () => undefined,
+    });
+    const server = createServer((request, response) => {
+      void handler(request, response);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('no port');
+    const base = `http://127.0.0.1:${address.port}`;
+    try {
+      const live = await fetch(`${base}/health/live`);
+      expect(live.status).toBe(200);
+      expect(await live.json()).toEqual({ status: 'live' });
+
+      // Trailing slashes are the same probe.
+      const liveNormalized = await fetch(`${base}/health/live/`);
+      expect(liveNormalized.status).toBe(200);
+
+      const ready = await fetch(`${base}/health/ready`);
+      expect(ready.status).toBe(200);
+      expect(await ready.json()).toEqual({ status: 'ready' });
+
+      const wrongVerb = await fetch(`${base}/health/ready`, { method: 'POST' });
+      expect(wrongVerb.status).toBe(405);
+      expect(wrongVerb.headers.get('allow')).toBe('GET');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('answers 503 and no detail when the database is unreachable', async () => {
+    const broken = createDatabase({
+      url: 'postgresql://slate:broken@127.0.0.1:1/none',
+      env: { SLATE_ENV: 'test' },
+      logger,
+    });
+    try {
+      const handler = createHttpHandler({
+        db: broken,
+        logger,
+        events: createEventBus(logger),
+        mediaEngine,
+        authenticate: async () => undefined,
+      });
+      const server = createServer((request, response) => {
+        void handler(request, response);
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const address = server.address();
+      if (address === null || typeof address === 'string') throw new Error('no port');
+      try {
+        // Liveness stays green: the process is fine, its dependency is not.
+        const live = await fetch(`http://127.0.0.1:${address.port}/health/live`);
+        expect(live.status).toBe(200);
+
+        const ready = await fetch(`http://127.0.0.1:${address.port}/health/ready`);
+        expect(ready.status).toBe(503);
+        expect(await ready.json()).toEqual({ status: 'unavailable' });
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    } finally {
+      await closeDatabase(broken);
+    }
+  });
+});

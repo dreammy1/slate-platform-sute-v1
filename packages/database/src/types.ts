@@ -11,7 +11,7 @@
  * docs/phase2-agent-tasks.md (SLATE-200 database contract).
  */
 
-import type { Generated } from 'kysely';
+import type { Generated, GeneratedAlways } from 'kysely';
 
 /** Root entity that owns tenants (billing, legal identity). Never tenant-scoped. */
 export interface OrganizationTable {
@@ -194,6 +194,26 @@ export interface MediaFileTable {
   readonly updated_at: Generated<Date>;
 }
 
+/**
+ * A searchable document (SLATE-208, ADR 007).
+ *
+ * Tenant-owned and only reachable through `db(tenantId)`. `search_vector` is a
+ * generated column: the database derives it from `title` and `body`, so it is
+ * neither insertable nor updatable (`GeneratedAlways`) and can never disagree
+ * with the text it indexes.
+ */
+export interface SearchDocumentTable {
+  readonly id: Generated<string>;
+  readonly tenant_id: string;
+  readonly entity: string;
+  readonly record_id: string;
+  readonly title: string;
+  readonly body: string;
+  readonly search_vector: GeneratedAlways<string>;
+  readonly created_at: Generated<Date>;
+  readonly updated_at: Generated<Date>;
+}
+
 export interface SlateMigrationsTable {
   readonly id: string;
   readonly name: string;
@@ -216,6 +236,7 @@ export interface Database {
   readonly background_job: BackgroundJobTable;
   readonly notification_delivery_log: NotificationDeliveryLogTable;
   readonly media_files: MediaFileTable;
+  readonly search_document: SearchDocumentTable;
   readonly slate_migrations: SlateMigrationsTable;
 }
 
@@ -235,6 +256,7 @@ export const TENANT_OWNED_TABLES = [
   'background_job',
   'notification_delivery_log',
   'media_files',
+  'search_document',
 ] as const;
 
 /** Every table the scoped helper will automatically filter by `tenant_id`. */
