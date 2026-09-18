@@ -9,7 +9,13 @@
 import { type Kysely } from 'kysely';
 import { type Database } from '@slate/database';
 import type { Logger } from '@slate/observability';
-import { enqueue, type JobHandlerContext, type JobDefinition } from '@slate/jobs';
+import {
+  enqueue,
+  type JobHandlerContext,
+  type JobDefinition,
+  type JobEventPublisher,
+  type AnyJobDefinition,
+} from '@slate/jobs';
 
 /** Stable identifier for a sent notification (provider-derived). */
 export type MessageId = string;
@@ -83,7 +89,7 @@ export class NotificationService {
           type: payload.type,
           provider_message_id: messageId ?? null,
           status: error ? 'failed' : 'delivered',
-          error_code: (error as any)?.code ?? (error ? 'unknown' : null),
+          error_code: (error as unknown as { code?: string })?.code ?? (error ? 'unknown' : null),
         })
         .execute();
     }
@@ -120,7 +126,7 @@ export async function enqueueNotification(
     tenantId: string;
     actorUserId?: string;
     requestId?: string;
-    publisher?: any;
+    publisher?: JobEventPublisher;
   },
   payload: NotificationPayload,
 ) {
@@ -131,11 +137,12 @@ export async function enqueueNotification(
       actorUserId: context.actorUserId,
       requestId: context.requestId,
       publisher: context.publisher,
-      registry: {} as Record<string, any>,
+      registry: {} as Record<string, AnyJobDefinition>,
     },
     {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: 'notification.deliver' as any,
-      payload: payload,
+      payload,
       idempotencyKey: `notif:${payload.recipient}:${Date.now()}`,
     },
   );

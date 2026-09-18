@@ -163,6 +163,22 @@ export interface BackgroundJobTable {
 }
 
 /** Migration ledger written by the runner in `src/runner.ts`. */
+/**
+ * Log of notification delivery attempts (SLATE-206).
+ * Tracks provider response IDs and final delivery status.
+ */
+export interface NotificationDeliveryLogTable {
+  readonly id: Generated<string>;
+  readonly tenant_id: string;
+  readonly job_id: string;
+  readonly recipient: string;
+  readonly type: 'email' | 'sms';
+  readonly provider_message_id: string | null;
+  readonly status: 'delivered' | 'failed';
+  readonly error_code: string | null;
+  readonly created_at: Generated<Date>;
+}
+
 export interface SlateMigrationsTable {
   readonly id: string;
   readonly name: string;
@@ -183,6 +199,7 @@ export interface Database {
   readonly system_setting: SystemSettingTable;
   readonly feature_flag: FeatureFlagTable;
   readonly background_job: BackgroundJobTable;
+  readonly notification_delivery_log: NotificationDeliveryLogTable;
   readonly slate_migrations: SlateMigrationsTable;
 }
 
@@ -200,6 +217,7 @@ export const TENANT_OWNED_TABLES = [
   'system_setting',
   'feature_flag',
   'background_job',
+  'notification_delivery_log',
 ] as const;
 
 /** Every table the scoped helper will automatically filter by `tenant_id`. */

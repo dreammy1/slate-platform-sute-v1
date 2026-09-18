@@ -1,27 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { enqueueNotification, NotificationJobDefinition } from '../index.ts';
+import { type Kysely } from 'kysely';
+import { type Database } from '@slate/database';
 
 describe('Notifications Integration', () => {
-  let db: any;
-  let trx: any;
+  let trx: unknown;
 
   beforeEach(() => {
-    db = {
-      transaction: vi.fn().mockImplementation(async (cb: any) => {
-        const trxMock = {
-          insertInto: vi.fn().mockReturnValue({
-            values: vi.fn().mockReturnValue({
-              onConflict: vi.fn().mockReturnValue({
-                returning: vi.fn().mockReturnValue({
-                  executeTakeFirst: vi.fn().mockResolvedValue({ id: 'job-123' }),
-                }),
-              }),
-            }),
-          }),
-        };
-        return cb(trxMock);
-      }),
-    };
     trx = {
       insertInto: vi.fn().mockReturnValue({
         values: vi.fn().mockReturnValue({
@@ -43,7 +28,7 @@ describe('Notifications Integration', () => {
     };
 
     const result = await enqueueNotification(
-      trx,
+      trx as unknown as Kysely<Database>,
       {
         tenantId: 'tenant-1',
       },
