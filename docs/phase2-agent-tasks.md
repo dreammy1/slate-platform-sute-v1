@@ -38,7 +38,7 @@ assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr
 | SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests                    |
 | SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit      |
 | SLATE-205 | agent:backend + agent:security | background jobs & task queue                                          | Enqueue → Isolation → Recovery → Audit |
-| SLATE-206 | agent:backend + agent:security | transactional notifications                                           | Enqueue → Deliver → Retry → Audit      |
+| SLATE-206 | agent:backend + agent:security | transactional notifications                                           | Enqueue → Deliver → Retry → Audit      | \n  | SLATE-207 | agent:backend + agent:security | media & file storage engine | Storage → signed URLs → Audit | \n  |
 
 ## SLATE-206 — Transactional Notifications
 
@@ -397,6 +397,34 @@ enabled boolean NOT NULL, created_at, updated_at)`, each with a unique
   remaining Phase 2 backlog complete.
 
 ---
+
+---
+
+## SLATE-207 — Media & File Storage Engine
+
+- **Owning agent:** `agent:backend`
+- **Milestone:** M2 Core
+- **Scope:** Implement a provider-agnostic media storage engine (`@slate/media`) supporting S3-compatible cloud storage and local disk fallback.
+- **Out of scope:** Full-blown DAM (Digital Asset Management) features; user-facing gallery UI; complex video transcoding.
+- **Allowed files/packages:**
+  - `packages/media/` (new)
+  - `packages/database/` (for media metadata tables)
+  - `packages/api/` (for presigning endpoints)
+- **Database Contract:**
+  - Create migration `0008_media_files.sql`:
+    - `media_files` table: `id`, `tenant_id`, `storage_path`, `mime_type`, `size`, `original_name`, `created_at`, `updated_at`.
+- **API Contract:**
+  - `POST /media/presign`: Generates a short-lived upload URL. Requires `media.upload` permission.
+  - `GET /media/:id`: Generates a short-lived download URL. Requires `media.read` permission.
+- **Security Rules:**
+  - Strict tenant-bound access: `storage_path` must always be prefixed with `tenant_id`.
+  - All external access must be via short-lived signed URLs.
+- **Acceptance Criteria:**
+  - Upload/download works via both `S3Provider` and `FileSystemProvider`.
+  - Signed URLs correctly expire.
+  - Tenant A cannot access Tenant B's files via ID manipulation.
+  - Image variants (thumbnails) can be generated via a defined processing pipeline.
+  - `npm run verify` clean.
 
 ## Planning artifact map
 
