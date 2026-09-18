@@ -38,7 +38,9 @@ assumes that decision. [`docs/adr/003-system-settings-and-feature-flags.md`](adr
 | SLATE-203 | agent:backend + agent:qa       | tenant-aware API scaffold, audit logging, event bus                   | API → Audit → Tests                    |
 | SLATE-204 | agent:backend + agent:security | system settings & feature flags                                       | Configuration → Isolation → Audit      |
 | SLATE-205 | agent:backend + agent:security | background jobs & task queue                                          | Enqueue → Isolation → Recovery → Audit |
-| SLATE-206 | agent:backend + agent:security | transactional notifications                                           | Enqueue → Deliver → Retry → Audit      | \n  | SLATE-207 | agent:backend + agent:security | media & file storage engine | Storage → signed URLs → Audit | \n  |
+| SLATE-206 | agent:backend + agent:security | transactional notifications                                           | Enqueue → Deliver → Retry → Audit      |
+| SLATE-207 | agent:backend + agent:security | media & file storage engine                                           | Storage → signed URLs → Audit          |
+| SLATE-208 | agent:backend + agent:security | search abstraction & health checks                                    | Search indexing & health probes        |
 
 ## SLATE-206 — Transactional Notifications
 
@@ -426,17 +428,51 @@ enabled boolean NOT NULL, created_at, updated_at)`, each with a unique
   - Image variants (thumbnails) can be generated via a defined processing pipeline.
   - `npm run verify` clean.
 
+## SLATE-208 — Search Abstraction & Health Checks
+
+- **Owning agent:** `agent:backend` + `agent:security`
+- **Milestone:** M2 Core
+- **Scope:** Provider-agnostic search abstraction (`@slate/search`) backed by PostgreSQL full-text search (`tsvector` + GIN), with tenant-scoped indexing and querying, plus Kubernetes-style liveness/readiness probes on the API.
+- **Out of scope:** external search engines (Meilisearch, Elasticsearch, Typesense); typo tolerance and synonym tuning; cross-tenant or global search; indexing binary assets; relevance dashboards.
+- **Allowed files/packages:**
+  - `packages/search/` (new)
+  - `packages/database/` (search migration and types)
+  - `packages/api/` (health probes and search routes)
+- **Database Contract:**
+  - Create migration `0009_search_documents.sql`:
+    - `search_document` table: `id`, `tenant_id`, `entity`, `record_id`, `title`, `body`, `search_vector` (generated, stored), `created_at`, `updated_at`.
+    - Unique key on `(tenant_id, entity, record_id)`; GIN index on `search_vector`.
+- **API Contract:**
+  - `POST /search/:entity`: index (upsert) one document. Body `{ recordId, title, body }`. Requires `search.write`.
+  - `GET /search/:entity?q=&limit=`: ranked, tenant-scoped full-text query. Requires `search.read`.
+  - `GET /health/live`: liveness probe, touches no dependency, unauthenticated.
+  - `GET /health/ready`: readiness probe, 200 only when every checked dependency is healthy, 503 otherwise.
+- **Security Rules:**
+  - The tenant always comes from the resolved context: no route accepts a tenant id, and a document id is never a capability.
+  - `search.indexed` and `search.query` audit rows commit in the same transaction as the work. Indexing records `{ entity, recordId }`; a query records `{ entity, query }` (ADR 007). A document body is never written to `audit_log`.
+  - Health probes are unauthenticated by design and disclose no configuration, version or dependency error detail.
+- **Acceptance Criteria:**
+  - Tenant A's documents are unreachable from tenant B for the same query string.
+  - Ranking is deterministic and stable for identical documents.
+  - `/health/ready` answers 503 when the database is unreachable and 200 when it is reachable.
+  - Every indexed document and every executed query leaves exactly one audit row.
+  - `npm run verify` clean.
+
 ## Planning artifact map
 
-| Phase 2 capability (Section 15)                                          | First task                     |
-| ------------------------------------------------------------------------ | ------------------------------ |
-| `database abstraction`                                                   | SLATE-200 (Kysely — ADR 001)   |
-| `tenants`, `organizations`                                               | SLATE-201                      |
-| `users`, `roles`, `permissions`                                          | SLATE-202                      |
-| `API`, event bus                                                         | SLATE-203                      |
-| `jobs`                                                                   | SLATE-205 (ADR 004 — Proposed) |
-| `audit`, `notifications`, `media`, `search abstraction`, `health checks` | SLATE-206+ (post-ADR backlog)  |
-| `settings`, `feature flags`                                              | SLATE-204 (ADR 003)            |
+| Phase 2 capability (Section 15) | First task                     |
+| ------------------------------- | ------------------------------ |
+| `database abstraction`          | SLATE-200 (Kysely — ADR 001)   |
+| `tenants`, `organizations`      | SLATE-201                      |
+| `users`, `roles`, `permissions` | SLATE-202                      |
+| `API`, event bus                | SLATE-203                      |
+| `jobs`                          | SLATE-205 (ADR 004 — Proposed) |
+| `audit`                         | SLATE-203                      |
+| `notifications`                 | SLATE-206 (ADR 005)            |
+| `media`                         | SLATE-207 (ADR 006)            |
+| `search abstraction`            | SLATE-208 (ADR 007 — Accepted) |
+| `health checks`                 | SLATE-208 (ADR 007 — Accepted) |
+| `settings`, `feature flags`     | SLATE-204 (ADR 003)            |
 
 > `authentication` is intentionally owned by SLATE-202 (authn is the prerequisite
 > to authorizing a user); `plugin runtime`, `license verification`, `theme
