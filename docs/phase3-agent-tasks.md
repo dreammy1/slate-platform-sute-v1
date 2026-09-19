@@ -8,7 +8,9 @@ Technology Stack), Section 13 (Security Architecture), Section 33 (Phase 4 — A
   System), Section 70 (Phase Gate Automation), Section 73 (What Must Be Built First).
 
 Architecture reference: [`docs/adr/008-frontend-architecture-and-ui-system.md`](adr/008-frontend-architecture-and-ui-system.md)
-(**Accepted**) governs every task below.
+(**Accepted**) governs every task below, with
+[`docs/adr/009-authenticated-shell-and-session-surfaces.md`](adr/009-authenticated-shell-and-session-surfaces.md)
+(**Proposed**) governing SLATE-301.
 
 ## Phase 2 gate: closed
 
@@ -60,10 +62,10 @@ Phase 2; every screen consumes them.
 | SLATE-302 | agent:frontend                  | admin dashboard & configuration screens                     | Settings → Flags → Audit → UI     |
 | SLATE-303 | agent:qa + agent:frontend       | Playwright E2E, accessibility automation & UI quality gates | E2E → A11y → Gate                 |
 
-Only **SLATE-300** is contracted in detail below. The remaining rows are
-deliberately un-contracted placeholders: each contract is written when its
-predecessor is green, so no agent widens its own boundary or starts on an
-unapproved dependency (Sections 2, 7, 10).
+Only **SLATE-300** (done) and **SLATE-301** are contracted in detail below. The
+remaining rows are deliberately un-contracted placeholders: each contract is
+written when its predecessor is green, so no agent widens its own boundary or
+starts on an unapproved dependency (Sections 2, 7, 10).
 
 ---
 
@@ -170,14 +172,96 @@ unapproved dependency (Sections 2, 7, 10).
   (API/Permission/Tenant/Audit/Events/Tests) covered; `DEVELOPMENT_STATE.md`
   updated; contract for SLATE-301 written only after this task is green.
 
+---
+
+## SLATE-301 — Authenticated app shell & session surfaces
+
+- **Owning agent:** `agent:frontend` (with `agent:security` review of session,
+  switcher, and guards — Section 9)
+- **Milestone:** M3 Frontend
+- **Dependencies:** SLATE-300 green; ADR 008 **Accepted**; ADR 009 **Proposed**
+  (implementation may not begin while ADR 009 is unaccepted; accept it first
+  per Section 67).
+- **Scope:** build the authenticated shell in both apps from real session data:
+  server session hydration, navigation layout (sidebar plus topbar), tenant
+  switcher, user profile tray with sign-out, and two-layer route protection
+  guards. All reads go through the mounted `/api/v1` handler or in-process
+  `createApi`; the browser holds no authority (ADR 008 plus ADR 009).
+- **Out of scope:** dashboard and portal content, settings editors, flag
+  toggles, job and media browsers, command search and notification centre
+  beyond shell placeholders (SLATE-302); Playwright E2E (SLATE-303); theme or
+  template runtime (Sec 15, later phase); plugin UI (Sec 16/17); sign-in,
+  registration, MFA, recovery screens (follow-on if required); new API routes,
+  schema changes, i18n, vertical module UI.
+- **Allowed files/packages:**
+  - `apps/admin/src/app/**/layout.tsx`, `apps/web/src/app/**/layout.tsx`
+  - `apps/admin/src/server/`, `apps/web/src/server/` (session hydration only)
+  - `apps/admin/src/app/api/`, `apps/web/src/app/api/` (switch and sign-out
+    actions only; no new platform routes)
+  - `packages/ui/` (shared presentational shell pieces only; no session reads)
+  - `packages/api-client/` (re-export session helpers only; no codec changes
+    unless ADR 009 requires them)
+  - `docs/adr/009-authenticated-shell-and-session-surfaces.md` (status only, on
+    acceptance)
+  - root `package.json` / `package-lock.json` (workspace scripts only)
+- **Contracts:**
+  - **Session contract:** `requireSession()` per app resolves `{ user, tenants,
+activeTenantId, permissions, requestId }` server-side from `slate_session`
+    via `createSessionCodec.verify` plus fresh `getCurrentUser`, membership,
+    and `getPermissionsForUser` reads. Props cross the boundary; cookie value,
+    secret, codec, DB handle never do.
+  - **Tenant contract:** verified payload `tenantId` wins; any other requested
+    tenant is 403, never re-scoped. Switch re-reads membership, refuses
+    non-members (403), re-issues with identical cookie attributes, leaves one
+    audit row.
+  - **Nav contract:** entries declare a permission key; server layout filters
+    with `hasPermission` per request; direct fetches re-check.
+  - **Guard contract:** protected by default; public routes enumerated; layout
+    redirect plus `/api/v1` re-check; client hiding is UX only.
+  - **Style contract:** ADR 008 tokens, preset, CSP, server theme, AA, axe, and
+    keyboard invariants extend to every shell piece.
+  - **Logging contract:** request-id correlation (Section 61); no tenant data,
+    session value, or token in logs; no `any`, no unlabelled console output.
+- **Security requirements:**
+  - Section 13: tenant and user ids are server-resolved; switch options come
+    from membership rows only; client sends no tenant id it can author.
+  - Fresh permission reads per request (no session permission cache); hidden
+    nav stays refused on direct fetch; server import in a client module still
+    throws (guard plus ESLint).
+  - Session stays `httpOnly` (`SameSite=Lax`, `Secure`, `Path=/`); nothing
+    sensitive in web storage; server env never referenced from client code;
+    tenant text as text; CSP at the boundary.
+- **Acceptance criteria:**
+  - `npm ci` from a clean clone resolves every workspace; `npm run verify`
+    green with the new surfaces included.
+  - Both apps render the shell for a signed-in principal from real tenant data
+    (user, org, tenant, permissions, one live read); fixtures do not satisfy.
+  - Switch to a non-member tenant is refused (403); unauthenticated protected
+    route redirects server-side; under-permissioned route is refused even on
+    direct fetch.
+  - Each audited switch leaves exactly one attributable audit row through the
+    mounted route; rival-tenant payload never renders mid-switch.
+  - Shell pieces are axe-clean, keyboard-operable, AA, flash-free themed, with
+    no sensitive value in web storage.
+  - CI `build` performs a real production build of both apps.
+- **Tests required:** hydration from a real signed session; switch refusal and
+  audit attribution; unauthenticated redirect; permission-filtered nav plus
+  direct-fetch refusal; web-storage absence; component tests (roles, keyboard,
+  axe) for every shell piece. Existing `@slate/testing` presets; no new
+  framework.
+- **Definition of Done (Section 12):** ADR 009 accepted; every criterion above
+  demonstrated by a test; `npm run verify` clean; phase-gate cells
+  (API/Permission/Tenant/Audit/Events/Tests) covered; `DEVELOPMENT_STATE.md`
+  updated; contract for SLATE-302 written only after this task is green.
+
 ## Planning artifact map
 
 | Phase 3 capability (Sections 4, 33)                       | First task                     |
 | --------------------------------------------------------- | ------------------------------ |
-| shared design system, tokens, accessible primitives       | SLATE-300 (ADR 008 — Proposed) |
-| Next.js App Router scaffolding (`apps/admin`, `apps/web`) | SLATE-300 (ADR 008 — Proposed) |
-| typed/versioned API client integration (§58)              | SLATE-300 (ADR 008 — Proposed) |
-| application shell, sidebar, topbar                        | SLATE-301                      |
+| shared design system, tokens, accessible primitives       | SLATE-300 (done)               |
+| Next.js App Router scaffolding (`apps/admin`, `apps/web`) | SLATE-300 (done)               |
+| typed/versioned API client integration (§58)              | SLATE-300 (done)               |
+| application shell, sidebar, topbar                        | SLATE-301 (ADR 009 — Proposed) |
 | command search, notification centre, profile, settings    | SLATE-301 / SLATE-302          |
 | admin dashboard, customer portal, responsive/mobile UI    | SLATE-302                      |
 | accessibility automation, Playwright E2E (§4, §64, §65)   | SLATE-303                      |

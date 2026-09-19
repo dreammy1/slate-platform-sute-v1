@@ -30,8 +30,9 @@
   - Known follow-up (documented, not lost): server-side request-id logging lands
     with the session middleware in SLATE-301; the client half is done and tested.
 - Next Task: **SLATE-301 — Authenticated app shell & session surfaces** per
-  `docs/phase3-agent-tasks.md`; its contract is written only after SLATE-300 is
-  green (it now is), so drafting it is the first step.
+  `docs/phase3-agent-tasks.md` and
+  `docs/adr/009-authenticated-shell-and-session-surfaces.md` (**Proposed**);
+  implementation begins after ADR 009 is accepted (Section 67).
 - Validation: **`npm run verify` completed with exit code 0 on 2026-09-19**
   (format:check, lint, typecheck, unit tests, integration tests, build — the
   build stage performs real production builds of both apps).
