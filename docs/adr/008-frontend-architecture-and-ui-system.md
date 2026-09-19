@@ -1,6 +1,8 @@
 # 008 — Frontend Architecture & UI System
 
-- **Status:** Proposed — implementation (SLATE-300) starts only once accepted (Section 67).
+- **Status:** **Accepted** — 2026-09-19. The reviewer approved both flagged scope
+  points (the additional `packages/api-client` workspace and the `/api/v1` prefix
+  reconciliation), so SLATE-300 may proceed (Section 67).
 - **Date:** 2026-09-19
 - **Deciders:** Slate architecture, security review, frontend
 - **Tags:** frontend, Next.js, App Router, Tailwind CSS, accessibility, design tokens, API client, Phase 3

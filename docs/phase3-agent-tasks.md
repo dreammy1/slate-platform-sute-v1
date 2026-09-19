@@ -8,8 +8,7 @@ Technology Stack), Section 13 (Security Architecture), Section 33 (Phase 4 — A
   System), Section 70 (Phase Gate Automation), Section 73 (What Must Be Built First).
 
 Architecture reference: [`docs/adr/008-frontend-architecture-and-ui-system.md`](adr/008-frontend-architecture-and-ui-system.md)
-(Proposed) governs every task below and must be accepted before implementation
-begins (Section 67).
+(**Accepted**) governs every task below.
 
 ## Phase 2 gate: closed
 

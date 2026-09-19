@@ -1,0 +1,9 @@
+{
+  "extends": "@slate/config/tsconfig/react-library.json",
+  "display": "Slate UI Package",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "*.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}

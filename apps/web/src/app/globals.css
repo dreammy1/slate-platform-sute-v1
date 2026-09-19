@@ -1,0 +1,8 @@
+/*
+ * The app's style entry (ADR 008 §3). Three layers, in this order:
+ * Tailwind's engine, the platform's theme mapping (`@theme inline` over the
+ * tokens), and the token values themselves — the only place colour is declared.
+ */
+@import 'tailwindcss';
+@import '@slate/config/tailwind/theme.css';
+@import '@slate/ui/styles/tokens.css';

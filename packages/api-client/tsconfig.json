@@ -1,0 +1,10 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "display": "Slate API Client Package",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src", "*.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}

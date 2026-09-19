@@ -1,0 +1,36 @@
+{
+  "name": "@slate/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The typed, versioned API client and the server/client boundary for the Slate frontend (SLATE-300). Import the root entry in the browser and '@slate/api-client/server' on the server. See docs/adr/008-frontend-architecture-and-ui-system.md.",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@slate/api": "*",
+    "@slate/database": "*",
+    "@slate/media": "*",
+    "@slate/observability": "*",
+    "@slate/tenant-context": "*",
+    "kysely": "^0.29.6"
+  },
+  "devDependencies": {
+    "@slate/config": "*",
+    "@slate/testing": "*",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^5.0.1",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}

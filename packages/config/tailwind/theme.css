@@ -1,0 +1,60 @@
+/**
+ * The Slate Tailwind preset (SLATE-300, ADR 008 §3).
+ *
+ * Tailwind v4 is CSS-first: this file *is* the preset. It maps Tailwind's theme
+ * namespace onto the semantic design tokens declared in
+ * `@slate/ui/src/styles/tokens.css`, so no colour, radius, font, shadow or easing
+ * value is ever repeated here. `@theme inline` inlines the `var(...)` reference
+ * instead of copying the value, which is exactly what lets the token layer stay
+ * the single source of truth for both light and dark themes.
+ *
+ * Apps consume it as:
+ *
+ * ```css
+ * @import 'tailwindcss';
+ * @import '@slate/config/tailwind/theme.css';
+ * @import '@slate/ui/styles/tokens.css';
+ * ```
+ */
+
+/* Class-based dark mode: the root element carries `dark`, resolved on the server. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * The component library lives in `packages/ui`, which Tailwind does not scan by
+ * itself (workspace packages are reached through a `node_modules` symlink, and
+ * `node_modules` is never scanned). Without this every utility that appears only
+ * inside a shared component would be purged from the app's stylesheet.
+ * Paths are relative to this file: packages/config/tailwind -> packages/ui/src.
+ */
+@source '../../ui/src';
+
+@theme inline {
+  --color-background: var(--slate-background);
+  --color-foreground: var(--slate-foreground);
+  --color-surface: var(--slate-surface);
+  --color-surface-foreground: var(--slate-surface-foreground);
+  --color-muted: var(--slate-muted);
+  --color-muted-foreground: var(--slate-muted-foreground);
+  --color-border: var(--slate-border);
+  --color-input: var(--slate-input);
+  --color-ring: var(--slate-ring);
+  --color-primary: var(--slate-primary);
+  --color-primary-foreground: var(--slate-primary-foreground);
+  --color-danger: var(--slate-danger);
+  --color-danger-foreground: var(--slate-danger-foreground);
+  --color-success: var(--slate-success);
+  --color-success-foreground: var(--slate-success-foreground);
+
+  --radius-sm: var(--slate-radius-sm);
+  --radius-md: var(--slate-radius-md);
+  --radius-lg: var(--slate-radius-lg);
+
+  --font-sans: var(--slate-font-sans);
+  --font-mono: var(--slate-font-mono);
+
+  --shadow-sm: var(--slate-shadow-sm);
+  --shadow-md: var(--slate-shadow-md);
+
+  --ease-standard: var(--slate-ease-standard);
+}
