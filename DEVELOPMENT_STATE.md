@@ -1,24 +1,22 @@
 # Current Status
 
-- Current Phase: Phase 2 (Slate Core)
-- Last Completed Task: **SLATE-208 — Search Abstraction & Health Checks**
-  (`agent:backend` + `agent:security`), per `docs/phase2-agent-tasks.md`.
-  ADR 007 is **Accepted**. Created `packages/search` (`@slate/search`): a
-  `SearchEngine` seam with the PostgreSQL implementation — a generated `tsvector`
-  column with a GIN index (migration `0009_search_documents.sql`) — so indexing
-  can never drift from the text it describes. Added the tenant-scoped
-  `POST /search/:entity` and `GET /search/:entity` routes (`search.write` /
-  `search.read`), each committing exactly one `search.*` audit row in the same
-  transaction as its work, plus unauthenticated `GET /health/live` (no dependency
-  touched) and `GET /health/ready` (200 only when the database answers, 503
-  otherwise, no error detail in the body). The **Search indexing & health probes**
-  gate is green: unit and PostgreSQL integration tests cover tenant isolation,
-  deterministic ranking, injection-safe queries, audit attribution and both probe
-  paths over the HTTP adapter.
-- Next Task: **Phase 2 gate review** — the
-  Organization → User → Permission → Tenant record → API → Audit → Tests chain
-  (Section 31) is now served by SLATE-200 through SLATE-208; the next phase
-  starts after the gate passes.
-- Validation: **`npm run verify` completed with exit code 0 on 2026-09-18**
+- Current Phase: **Phase 3 — Frontend Scaffold & Shared UI**.
+- Phase 2 (**Slate Core**) is **100% complete** and its gate is closed: all nine
+  capability packages are implemented and green — `@slate/database`, `@slate/auth`,
+  `@slate/api`, `@slate/settings`, `@slate/jobs`, `@slate/notifications`,
+  `@slate/media`, `@slate/search`, `@slate/observability` — supported by
+  `@slate/config`, `@slate/tenant-context` and `@slate/testing`. The
+  `Organization → User → Permission → Tenant record → API → Audit → Tests` chain
+  (Section 31) holds: CI Run #29 is green and `npm run verify` exits 0 on the
+  merged state (format:check, lint, typecheck, unit tests, integration tests,
+  build). Last completed task: **SLATE-208 — Search Abstraction & Health Checks**.
+- Next Task: **SLATE-300 — Shared UI package & workspace app scaffolding**:
+  `packages/ui` (`@slate/ui`) with design tokens and accessible primitives, the
+  typed API client and server guard, the Tailwind preset in `@slate/config`, and
+  the Next.js App Router applications `apps/admin` + `apps/web`, per
+  `docs/phase3-agent-tasks.md`.
+  ADR 008 (`docs/adr/008-frontend-architecture-and-ui-system.md`) is **Proposed**
+  and must be accepted before implementation begins (Section 67).
+- Validation: **`npm run verify` completed with exit code 0 on 2026-09-19**
   (format:check, lint, typecheck, unit tests, integration tests, build).
 - Blockers: None.
