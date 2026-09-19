@@ -1,6 +1,6 @@
 # ADR 009 — Authenticated Shell & Session Surfaces
 
-- **Status:** Proposed
+- **Status:** Accepted — 2026-09-19. Review approved; SLATE-301 implements this ADR.
 - **Date:** 2026-09-19
 - **Deciders:** Slate architecture, security review, frontend
 - **Tags:** frontend, session, shell, tenancy, guards, Phase 3

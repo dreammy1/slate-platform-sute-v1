@@ -15,6 +15,10 @@
  * Style contract: import the tokens once per app via
  * `@slate/ui/styles/tokens.css` and map them with
  * `@slate/config/tailwind/theme.css` (ADR 008 §3).
+ *
+ * Shell contract (SLATE-301, ADR 009 §2): navigation entries plus `filterNavigation`
+ * (data the server layout filters), `Shell` (sidebar/topbar/content chrome), and
+ * `TenantSwitcher` (membership-only form the server action verifies).
  */
 
 export { Button, type ButtonProps } from './components/button.tsx';
@@ -31,6 +35,15 @@ export { Input, type InputProps } from './components/input.tsx';
 export { Modal, type ModalProps } from './components/modal.tsx';
 
 export { cn } from './lib/cn.ts';
+
+export {
+  ADMIN_NAVIGATION,
+  WEB_NAVIGATION,
+  filterNavigation,
+  type ShellNavigationEntry,
+} from './shell/navigation.ts';
+export { Shell, type ShellProps, type ShellTenantOption, type ShellUser } from './shell/shell.tsx';
+export { TenantSwitcher, type TenantSwitcherProps } from './shell/tenant-switcher.tsx';
 
 export {
   isTheme,

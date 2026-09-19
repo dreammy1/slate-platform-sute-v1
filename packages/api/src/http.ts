@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '@slate/tenant-context';
-import { createApi, type ApiOptions, type ApiResponse } from './api.ts';
+import { createApi, MAX_REQUEST_ID_LENGTH, type ApiOptions, type ApiResponse } from './api.ts';
 import { HEALTH_LIVE_PATH, healthLive, healthReady, isHealthRoute } from './health.ts';
 
 export interface HttpOptions extends ApiOptions {
@@ -8,6 +8,23 @@ export interface HttpOptions extends ApiOptions {
   readonly authenticate: (request: IncomingMessage) => Promise<AuthenticatedPrincipal | undefined>;
 }
 const MAX_BODY_BYTES = 16_384;
+
+/** The browser's correlation header; read here, carried by `createApi`. */
+const REQUEST_ID_HEADER = 'x-request-id';
+
+/**
+ * Reads the correlation id exactly as the browser client sends it. Reuse the
+ * pipeline's sanitizer: an over-long or off-alphabet value is \"no id\", and
+ * nothing here may reject a request for a bad correlation value.
+ */
+function requestIdFor(request: IncomingMessage): string | undefined {
+  const header = request.headers[REQUEST_ID_HEADER];
+  const first = Array.isArray(header) ? header[0] : header;
+  if (first === undefined) return undefined;
+  const trimmed = first.trim();
+  if (trimmed === '' || trimmed.length > MAX_REQUEST_ID_LENGTH) return undefined;
+  return /^[A-Za-z0-9_.:-]+$/.test(trimmed) ? trimmed : undefined;
+}
 
 /** Request path without the query string, which routing never inspects. */
 function pathFor(request: IncomingMessage): string {
@@ -46,12 +63,19 @@ function allowedVerbs(path: string): string | undefined {
 export function createHttpHandler(options: HttpOptions) {
   const api = createApi(options);
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const requestId = requestIdFor(request);
     const send = (result: ApiResponse) => {
       const allow = result.status === 405 ? allowedVerbs(pathFor(request)) : undefined;
       response.writeHead(result.status, {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
         'x-content-type-options': 'nosniff',
+        // The sanitized id echoes back, so the browser can show the id its
+        // retry or support lookup needs (Section 61, SLATE-301).
+        ...(requestId === undefined ? {} : { [REQUEST_ID_HEADER]: requestId }),
+        ...(result.requestId === undefined || result.requestId === requestId
+          ? {}
+          : { [REQUEST_ID_HEADER]: result.requestId }),
         ...(allow === undefined ? {} : { allow }),
       });
       response.end(JSON.stringify(result.body));
@@ -67,10 +91,12 @@ export function createHttpHandler(options: HttpOptions) {
       // thing readiness checks - is broken (ADR 007).
       if (isHealthRoute(normalizedPath)) {
         if (method !== 'GET') {
-          send({ status: 405, body: { error: 'Request rejected' } });
+          send({ status: 405, body: { error: 'Request rejected' }, requestId });
           return;
         }
-        send(normalizedPath === HEALTH_LIVE_PATH ? healthLive() : await healthReady(options.db));
+        const probe =
+          normalizedPath === HEALTH_LIVE_PATH ? healthLive() : await healthReady(options.db);
+        send(requestId === undefined ? probe : { ...probe, requestId });
         return;
       }
       const principal = await options.authenticate(request);
@@ -84,7 +110,7 @@ export function createHttpHandler(options: HttpOptions) {
           request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !==
           'application/json'
         ) {
-          send({ status: 415, body: { error: 'Expected application/json' } });
+          send({ status: 415, body: { error: 'Expected application/json' }, requestId });
           return;
         }
         const chunks: Buffer[] = [];
@@ -93,7 +119,7 @@ export function createHttpHandler(options: HttpOptions) {
           const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
           size += buffer.length;
           if (size > MAX_BODY_BYTES) {
-            send({ status: 413, body: { error: 'Request body too large' } });
+            send({ status: 413, body: { error: 'Request body too large' }, requestId });
             return;
           }
           chunks.push(buffer);
@@ -101,11 +127,13 @@ export function createHttpHandler(options: HttpOptions) {
         try {
           body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
         } catch {
-          send({ status: 400, body: { error: 'Invalid JSON' } });
+          send({ status: 400, body: { error: 'Invalid JSON' }, requestId });
           return;
         }
       }
-      send(await api({ method, path, principal, tenantId, query: queryFor(request), body }));
+      send(
+        await api({ method, path, principal, tenantId, query: queryFor(request), body, requestId }),
+      );
     } catch {
       if (!response.headersSent) send({ status: 500, body: { error: 'Internal server error' } });
       else response.end();

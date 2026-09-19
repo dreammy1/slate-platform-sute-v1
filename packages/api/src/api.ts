@@ -60,10 +60,49 @@ export interface ApiRequest {
   /** Decoded query parameters; read routes validate them per contract. */
   readonly query?: Readonly<Record<string, string>> | undefined;
   readonly body?: unknown;
+  /**
+   * Carries the browser's `x-request-id` into the pipeline (Section 61,
+   * SLATE-301). The value is correlation only: it is never logged as tenant
+   * data, never trusted as an identifier, and echoes back on the response.
+   */
+  readonly requestId?: string | undefined;
 }
 export interface ApiResponse {
   readonly status: number;
   readonly body: unknown;
+  /**
+   * Echoes the sanitized request id (Section 61, SLATE-301). The browser client
+   * prefers this value over its own, so logs and audit rows join on one id.
+   */
+  readonly requestId?: string | undefined;
+}
+
+/** Longest request id accepted; longer values are dropped, never truncated. */
+export const MAX_REQUEST_ID_LENGTH = 128;
+
+/** Request-id characters the platform accepts; anything else is dropped. */
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_.:-]+$/;
+
+/**
+ * Sanitizes a caller-supplied request id.
+ *
+ * A request id is correlation only (never an identifier, never logged as data),
+ * but it still crosses a trust boundary: an unbounded or control-character
+ * value could pollute structured logs. Anything absent, non-string, empty,
+ * over-long or off-alphabet is \"no id\" rather than a rejection.
+ */
+export function sanitizeRequestId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed.length > MAX_REQUEST_ID_LENGTH) return undefined;
+  if (!REQUEST_ID_PATTERN.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+/** Attaches the sanitized id to a response, when one survived sanitizing. */
+export function withRequestId(response: ApiResponse, requestId: string | undefined): ApiResponse {
+  if (requestId === undefined) return response;
+  return { ...response, requestId };
 }
 
 export interface ApiOptions {
@@ -449,11 +488,23 @@ export function createApi({
   searchEngine: search = postgresSearchEngine,
 }: ApiOptions) {
   return async (request: ApiRequest): Promise<ApiResponse> => {
+    const requestId = sanitizeRequestId(request.requestId);
+    // Request-scoped child: every record below carries the id, so a browser
+    // action and its audit row join in the log (Section 61, SLATE-301). The
+    // local name avoids the `scoped` tenant-database helper declared below.
+    const scopedLogger = requestId === undefined ? logger : logger.child({ requestId });
     const resolved = resolveTenantContext({
       principal: request.principal,
       requestedTenantId: request.tenantId,
     });
-    if (!resolved.ok) return { status: resolved.status, body: errorBody(resolved.status) };
+    if (!resolved.ok) {
+      if (requestId !== undefined)
+        scopedLogger.info('request rejected', { status: resolved.status });
+      return withRequestId(
+        { status: resolved.status, body: errorBody(resolved.status) },
+        requestId,
+      );
+    }
     const { tenantId } = resolved.context;
 
     // A principal with no usable identity is rejected here, still before the
@@ -461,14 +512,22 @@ export function createApi({
     // lookup, which would cost a database round trip for a known-bad request.
     const principal = request.principal;
     if (principal === undefined || principal.userId.trim() === '') {
-      return { status: 401, body: { error: 'Unauthenticated' } };
+      if (requestId !== undefined) scopedLogger.info('request rejected', { status: 401 });
+      return withRequestId({ status: 401, body: { error: 'Unauthenticated' } }, requestId);
     }
 
     // Routing and method rejection also happen before the transaction, so a
     // request that cannot be served costs no database round trip.
     try {
       const matched = matchRoute(request);
-      if (!matched.ok) return { status: matched.status, body: errorBody(matched.status) };
+      if (!matched.ok) {
+        if (requestId !== undefined)
+          scopedLogger.info('request rejected', { status: matched.status });
+        return withRequestId(
+          { status: matched.status, body: errorBody(matched.status) },
+          requestId,
+        );
+      }
       const { route, key } = matched;
       // Reject invalid configuration keys before even opening a transaction.
       if (route === 'PUT /settings/:key') assertSettingKey(key!);
@@ -495,6 +554,7 @@ export function createApi({
           throw new HttpError(403);
 
         const scoped = createTenantDatabase(trx, tenantId);
+        const scopedLog = scopedLogger;
         const configuration = createTenantConfiguration(trx);
 
         /** Writes exactly one attributed audit row, inside this transaction. */
@@ -525,7 +585,7 @@ export function createApi({
         ): readonly (() => Promise<void>)[] => [
           () => {
             try {
-              logger.info('app.audit.recorded', {
+              scopedLog.info('app.audit.recorded', {
                 tenantId,
                 actorUserId: actor.id,
                 auditId,
@@ -816,7 +876,7 @@ export function createApi({
       // line be logged and the events be published, so a write that rolled back
       // can never announce itself.
       for (const notify of outcome.notifications) await notify();
-      return outcome.response;
+      return withRequestId(outcome.response, requestId);
     } catch (error) {
       const status =
         error instanceof HttpError
@@ -828,12 +888,18 @@ export function createApi({
               : 500;
       if (status === 500) {
         try {
-          logger.error('request failed', { path: request.path, method: request.method });
+          scopedLogger.error('request failed', { path: request.path, method: request.method });
+        } catch {
+          /* sink failure */
+        }
+      } else if (requestId !== undefined) {
+        try {
+          scopedLogger.info('request rejected', { status });
         } catch {
           /* sink failure */
         }
       }
-      return { status, body: errorBody(status) };
+      return withRequestId({ status, body: errorBody(status) }, requestId);
     }
   };
 }
