@@ -1,21 +1,18 @@
 /**
- * The admin app's Next.js configuration (SLATE-300, ADR 008).
+ * The customer web app's Next.js configuration (SLATE-300, ADR 008).
  *
  * `transpilePackages` is required because the workspace packages are consumed as
  * TypeScript *source* (their `exports` point at `src/index.ts`), and the ESLint
  * boundary rules keep the app away from server packages except in the two
  * designated server zones: the API mount (`src/app/api/v1`) and its wiring
- * (`src/server`).
+ * (`src/server`). Lint is owned by the repository root (`npm run lint`); Next.js
+ * no longer accepts an `eslint` key here (v16 removed it), so none is set.
  *
  * @type {import('next').NextConfig}
  */
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@slate/ui', '@slate/api-client'],
-  // Lint is owned by the repository root (`npm run lint`, flat config covering
-  // every workspace); running a second ESLint inside `next build` would only
-  // duplicate it with different settings.
-  eslint: { ignoreDuringBuilds: true },
   headers: async () => [
     {
       source: '/:path*',
