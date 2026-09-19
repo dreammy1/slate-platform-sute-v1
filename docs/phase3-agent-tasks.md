@@ -10,7 +10,9 @@ Technology Stack), Section 13 (Security Architecture), Section 33 (Phase 4 — A
 Architecture reference: [`docs/adr/008-frontend-architecture-and-ui-system.md`](adr/008-frontend-architecture-and-ui-system.md)
 (**Accepted**) governs every task below, with
 [`docs/adr/009-authenticated-shell-and-session-surfaces.md`](adr/009-authenticated-shell-and-session-surfaces.md)
-(**Proposed**) governing SLATE-301.
+(**Accepted**) governing SLATE-301 and
+[`docs/adr/010-admin-feature-modules.md`](adr/010-admin-feature-modules.md)
+(**Proposed**) governing SLATE-302.
 
 ## Phase 2 gate: closed
 
@@ -59,13 +61,13 @@ Phase 2; every screen consumes them.
 | --------- | ------------------------------- | ----------------------------------------------------------- | --------------------------------- |
 | SLATE-300 | agent:frontend + agent:security | shared UI package & workspace app scaffolding               | Shell → Tenant data → API → Audit |
 | SLATE-301 | agent:frontend + agent:security | authenticated app shell & session surfaces                  | Session → Permission → Shell      |
-| SLATE-302 | agent:frontend                  | admin dashboard & configuration screens                     | Settings → Flags → Audit → UI     |
+| SLATE-302 | agent:frontend + agent:security | admin feature modules: tenants, users/roles, flags, health  | Settings → Flags → Audit → UI     |
 | SLATE-303 | agent:qa + agent:frontend       | Playwright E2E, accessibility automation & UI quality gates | E2E → A11y → Gate                 |
 
-Only **SLATE-300** (done) and **SLATE-301** are contracted in detail below. The
-remaining rows are deliberately un-contracted placeholders: each contract is
-written when its predecessor is green, so no agent widens its own boundary or
-starts on an unapproved dependency (Sections 2, 7, 10).
+**SLATE-300** (done), **SLATE-301** (done) and **SLATE-302** are contracted in
+detail below. The remaining row is a deliberately un-contracted placeholder: each
+contract is written when its predecessor is green, so no agent widens its own
+boundary or starts on an unapproved dependency (Sections 2, 7, 10).
 
 ---
 
@@ -254,6 +256,92 @@ activeTenantId, permissions, requestId }` server-side from `slate_session`
   (API/Permission/Tenant/Audit/Events/Tests) covered; `DEVELOPMENT_STATE.md`
   updated; contract for SLATE-302 written only after this task is green.
 
+---
+
+## SLATE-302 — Admin feature modules (tenants, users/roles, flags, health)
+
+- **Owning agent:** `agent:frontend` (with `agent:security` review of tenant,
+  RBAC and flag mutations — Section 9)
+- **Milestone:** M3 Frontend
+- **Dependencies:** SLATE-301 green; ADR 008 **Accepted**; ADR 009 **Accepted**;
+  ADR 010 **Proposed** (implementation may not begin while ADR 010 is
+  unaccepted; accept it first per Section 67).
+- **Scope:** build the `apps/admin` feature modules on the SLATE-301 shell from
+  real server data — tenant management, user and role administration, feature
+  flag overrides, and system health dashboards — each permission-gated,
+  tenant-scoped and audited. All reads and writes run through the mounted
+  `/api/v1` handler or in-process `createApi`; the browser holds no authority
+  (ADR 008, ADR 009, ADR 010).
+- **Out of scope:** Playwright E2E and accessibility automation (SLATE-303);
+  customer-portal content beyond the shell; theme or template runtime (§15);
+  plugin-supplied UI (§16/§17); sign-in, registration, MFA and recovery screens;
+  the audit-log viewer, billing and data export; new platform routes, schema
+  changes or migrations; i18n; vertical module UI.
+- **Allowed files/packages:**
+  - `apps/admin/src/app/**` (module routes, pages and layouts)
+  - `apps/admin/src/server/` (server-only data loading for module screens)
+  - `packages/ui/` (shared presentational module pieces only; no session reads)
+  - `packages/api-client/` (client helpers and route constants only; no
+    authority, no codec changes)
+  - `docs/adr/010-admin-feature-modules.md` (status only, on acceptance)
+  - root `package.json` / `package-lock.json` (workspace scripts only)
+- **Contracts:**
+  - **Nav/permission contract:** every module entry declares a permission key;
+    the server layout and each page re-check with a fresh `hasPermission` read;
+    direct fetches re-check (ADR 009 §2, §5).
+  - **Tenant contract:** the acting tenant and organization are server-resolved
+    from the session; no form, URL, header or storage value may choose a tenant
+    (Section 13); a cross-tenant read or write is refused, never re-scoped.
+  - **RBAC contract:** role and permission mutations are gated by administrative
+    keys; an actor may only grant permissions it holds (fresh read), so no
+    self-widening; revoked grants take effect on the next request.
+  - **Flags contract:** flag overrides use the existing `@slate/settings` store;
+    effective value = tenant override else global default; the source is shown;
+    no new flag storage (Section 18).
+  - **Health contract:** the dashboard aggregates existing Phase 2 probes per
+    request; no privileged probe, no bypass, and no secret or raw error body in
+    the response or the DOM.
+  - **Audit contract:** each admin write leaves exactly one attributable
+    `audit_log` row (actor, tenant, resource, request id) through the mounted
+    route.
+  - **Style contract:** ADR 008 tokens, preset, CSP, server theme, AA, axe and
+    keyboard invariants extend to every module screen.
+  - **Logging contract:** request-id correlation (Section 61); no tenant data,
+    session value, secret or token in logs; no `any`, no unlabelled console
+    output.
+- **Security requirements:**
+  - Section 13: tenant, user, role and flag writes are server-authorized;
+    client hiding is UX only and never the boundary.
+  - Fresh permission reads per request (no cached grants); the escalation guard
+    is enforced server-side; hidden controls stay refused on direct fetch.
+  - No sensitive value in web storage or client logs; server env never
+    referenced from client code; tenant-authored text rendered as text; CSP at
+    the app boundary.
+- **Acceptance criteria:**
+  - `npm ci` from a clean clone resolves every workspace; `npm run verify` green
+    with the new modules included.
+  - Each module renders from real tenant data (users, roles, permissions, flags,
+    probe results); fixtures do not satisfy.
+  - Cross-tenant access is refused (403/404 per policy); an under-permissioned
+    route is refused even on direct fetch; a non-member tenant switch is
+    refused.
+  - Every admin write leaves exactly one attributable audit row through the
+    mounted route; an actor cannot grant a permission it does not hold.
+  - Flag overrides resolve override over default and report their source; health
+    output is sanitized (no secret, connection string or stack trace).
+  - Module screens are axe-clean, keyboard-operable, AA, flash-free themed, with
+    no sensitive value in web storage.
+  - CI `build` performs a real production build of both apps.
+- **Tests required:** tenant-scoped read and refusal; RBAC authorization plus
+  the escalation guard; flag precedence and source reporting; sanitized health
+  aggregation; permission-filtered nav plus direct-fetch refusal; audit
+  attribution per write; component tests (roles, keyboard, axe) for every module
+  screen. Existing `@slate/testing` presets; no new framework.
+- **Definition of Done (Section 12):** ADR 010 accepted; every criterion above
+  demonstrated by a test; `npm run verify` clean; phase-gate cells
+  (API/Permission/Tenant/Audit/Events/Tests) covered; `DEVELOPMENT_STATE.md`
+  updated; the SLATE-303 contract written only after this task is green.
+
 ## Planning artifact map
 
 | Phase 3 capability (Sections 4, 33)                       | First task                     |
@@ -261,9 +349,9 @@ activeTenantId, permissions, requestId }` server-side from `slate_session`
 | shared design system, tokens, accessible primitives       | SLATE-300 (done)               |
 | Next.js App Router scaffolding (`apps/admin`, `apps/web`) | SLATE-300 (done)               |
 | typed/versioned API client integration (§58)              | SLATE-300 (done)               |
-| application shell, sidebar, topbar                        | SLATE-301 (ADR 009 — Proposed) |
-| command search, notification centre, profile, settings    | SLATE-301 / SLATE-302          |
-| admin dashboard, customer portal, responsive/mobile UI    | SLATE-302                      |
+| application shell, sidebar, topbar                        | SLATE-301 (done)               |
+| command search, notification centre, profile, settings    | SLATE-301 (done) / SLATE-302   |
+| admin feature modules, customer portal, responsive UI     | SLATE-302 (ADR 010 — Proposed) |
 | accessibility automation, Playwright E2E (§4, §64, §65)   | SLATE-303                      |
 | theme runtime, template runtime (§15)                     | later phase (not Phase 3)      |
 | plugin-supplied UI surfaces (§16, §17)                    | later phase (not Phase 3)      |

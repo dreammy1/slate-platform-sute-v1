@@ -35,8 +35,18 @@
   session hydration, two-layer route guards, permission-filtered navigation,
   tenant switcher with audit logging, and secure sign-out implemented across
   `apps/admin` and `apps/web`.
-- Next Task: **SLATE-302** per `docs/phase3-agent-tasks.md`.
-- Validation: **`npm run verify` completed with exit code 0 on 2026-09-19**
+- Fixed: **CI Run #36** (`@slate/api-client:unit`) — the unit Vitest config now
+  pins the project root to the package directory, so the suite is discovered
+  from any working directory. From the repository root it previously exited 1
+  with "No test files found"; it now runs 3 files / 37 tests green, and the
+  per-workspace run is unchanged.
+- Next Task: **SLATE-302 planning** — the task contract is drafted in
+  `docs/phase3-agent-tasks.md` and
+  `docs/adr/010-admin-feature-modules.md` is **Proposed** (admin feature modules:
+  tenant management, user/role administration, feature-flag overrides, system
+  health dashboards for `apps/admin`). Implementation may not begin until ADR 010
+  is accepted (Section 67).
+- Validation: **`npm run verify` completed with exit code 0 on 2026-09-20**
   (format:check, lint, typecheck, unit tests, integration tests, build — the
   build stage performs real production builds of both apps).
 - Blockers: None.
