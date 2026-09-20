@@ -40,12 +40,33 @@
   from any working directory. From the repository root it previously exited 1
   with "No test files found"; it now runs 3 files / 37 tests green, and the
   per-workspace run is unchanged.
-- Next Task: **SLATE-302 planning** — the task contract is drafted in
+- Completed: **SLATE-302 — Admin feature modules** per
   `docs/phase3-agent-tasks.md` and
-  `docs/adr/010-admin-feature-modules.md` is **Proposed** (admin feature modules:
-  tenant management, user/role administration, feature-flag overrides, system
-  health dashboards for `apps/admin`). Implementation may not begin until ADR 010
-  is accepted (Section 67).
+  `docs/adr/010-admin-feature-modules.md` (**Accepted**):
+  - Tenant management (`/tenants`, `/tenants/[tenantId]`): membership-scoped
+    listing with member counts, creation inside the actor's organization and a
+    member detail view; a tenant outside the memberships is a not-found, never a
+    re-scope; each creation leaves exactly one attributable audit row.
+  - User & role administration (`/users`): tenant-scoped member list, roles with
+    their permission keys, and role assignment guarded server-side — a role whose
+    fresh permission set exceeds the actor's own is refused (403), changes
+    nothing and writes no audit row.
+  - Feature-flag overrides (`/features`): every declared flag with its effective
+    value and source, per-tenant overrides set or cleared through
+    `@slate/settings`, each change audited in one transaction.
+  - System health (`/health`): the live and ready probes projected through a
+    pure, unit-tested builder that carries a state word and the HTTP status only.
+  - Shell wiring in `apps/admin` from the SLATE-301 pieces (`requireSession()`
+    hydration), tenant-switch and sign-out route handlers, and the admin
+    navigation entries for the four modules.
+  - Tests: unit suites for the permission guard and the health projection plus an
+    11-test PostgreSQL integration suite (isolation, audit attribution, escalation
+    guard, flag precedence) behind the new `@slate/admin` Vitest presets.
+  - Fix: `@slate/database` resolves its migrations directory defensively, so a
+    Next.js screen that reaches the database no longer fails page-data collection.
+- Next Task: **SLATE-303** per `docs/phase3-agent-tasks.md` (Playwright E2E,
+  accessibility automation and UI quality gates); its contract is written now
+  that its predecessor is green.
 - Validation: **`npm run verify` completed with exit code 0 on 2026-09-20**
   (format:check, lint, typecheck, unit tests, integration tests, build — the
   build stage performs real production builds of both apps).

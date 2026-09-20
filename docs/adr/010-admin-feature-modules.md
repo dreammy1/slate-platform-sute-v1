@@ -1,7 +1,7 @@
 # ADR 010 — Admin Feature Modules
 
-- **Status:** Proposed — 2026-09-20. Drafted with the SLATE-302 task contract;
-  implementation may not begin while this ADR is unaccepted (Section 67).
+- **Status:** Accepted — 2026-09-20. Approved with the SLATE-302 task contract;
+  SLATE-302 implements this ADR.
 - **Date:** 2026-09-20
 - **Deciders:** Slate architecture, security review, frontend
 - **Tags:** frontend, admin, tenancy, rbac, feature-flags, health, Phase 3

@@ -35,6 +35,7 @@ export function TenantSwitcher({ tenants, activeTenantId, onSwitch, action }: Te
   return (
     <form
       aria-label="Switch tenant"
+      method="post"
       {...(action === undefined ? {} : { action })}
       {...(onSwitch === undefined ? {} : { onSubmit: handleSubmit })}
       className="flex items-center gap-2"

@@ -7,6 +7,9 @@
     "dev": "next dev --turbopack -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

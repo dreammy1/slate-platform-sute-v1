@@ -1,37 +1,60 @@
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@slate/ui';
+import { Card, CardDescription, CardHeader, CardTitle } from '@slate/ui';
 
-/**
- * The scaffolded admin shell (SLATE-300). It renders from the design system only
- * — the real, session-resolved tenant data shell is SLATE-301, which owns the
- * authentication surfaces this page deliberately does not fake.
- */
-export default function HomePage() {
+import { requireActor } from '@/server/session';
+
+export const dynamic = 'force-dynamic';
+
+/** The admin overview (SLATE-302): the modules, each permission-gated server-side. */
+const MODULES = [
+  {
+    href: '/tenants',
+    title: 'Tenant management',
+    description: 'List reachable tenants, create one and inspect its members.',
+  },
+  {
+    href: '/users',
+    title: 'User & role administration',
+    description: 'Review tenant members and assign roles, guarded against privilege escalation.',
+  },
+  {
+    href: '/features',
+    title: 'Feature flag overrides',
+    description: 'See every flag’s effective value and source, and set a per-tenant override.',
+  },
+  {
+    href: '/health',
+    title: 'System health',
+    description: 'Liveness and readiness probes, projected to a sanitized status.',
+  },
+] as const;
+
+export default async function OverviewPage() {
+  await requireActor();
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Slate Admin</h1>
-        <span className="text-sm text-muted-foreground">workspace scaffold</span>
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold text-foreground">Overview</h1>
+        <p className="text-sm text-muted-foreground">
+          Administer the active tenant. Every write is authorized server-side and leaves one
+          attributable audit row.
+        </p>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Phase 3 scaffolding is in place</CardTitle>
-          <CardDescription>
-            The shared design system, the typed API client and the versioned API mount are wired.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          The authenticated tenant-data shell — sidebar, topbar, settings and feature-flag screens —
-          lands with SLATE-301 and SLATE-302.
-        </CardContent>
-      </Card>
-
-      <section className="flex flex-wrap gap-3">
-        <Button variant="primary">Primary action</Button>
-        <Button variant="secondary">Secondary</Button>
-        <Button variant="ghost">Ghost</Button>
-        <Button variant="danger">Danger</Button>
+      <section className="grid gap-4 sm:grid-cols-2">
+        {MODULES.map((module) => (
+          <Card key={module.href}>
+            <CardHeader>
+              <CardTitle as="h2">
+                <a className="underline" href={module.href}>
+                  {module.title}
+                </a>
+              </CardTitle>
+              <CardDescription>{module.description}</CardDescription>
+            </CardHeader>
+          </Card>
+        ))}
       </section>
-    </main>
+    </div>
   );
 }

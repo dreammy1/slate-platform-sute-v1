@@ -15,7 +15,11 @@ import { FileSystemStorageProvider, MediaEngine } from '@slate/media';
 import { createLogger, type Logger } from '@slate/observability';
 import type { Kysely } from 'kysely';
 import type { AuthenticatedPrincipal } from '@slate/tenant-context';
-import { SESSION_COOKIE_NAME, createSessionCodec } from '@slate/api-client/server';
+import {
+  SESSION_COOKIE_NAME,
+  createSessionCodec,
+  type SessionCodec,
+} from '@slate/api-client/server';
 
 /** Every variable the mounted platform needs; absent entries disable serving. */
 export type PlatformEnvironment = Readonly<Record<string, string | undefined>>;
@@ -23,6 +27,8 @@ export type PlatformEnvironment = Readonly<Record<string, string | undefined>>;
 interface PlatformRuntime {
   readonly handler: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   readonly db: Kysely<Database>;
+  /** The session codec, so server-side screens hydrate the same cookie the API verifies. */
+  readonly codec: SessionCodec;
 }
 
 let runtimePromise: Promise<PlatformRuntime | undefined> | undefined;
@@ -89,7 +95,7 @@ async function buildRuntime(
     },
   });
 
-  return { handler, db };
+  return { handler, db, codec };
 }
 
 /**

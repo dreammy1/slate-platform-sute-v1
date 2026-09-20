@@ -18,13 +18,13 @@ export interface ShellNavigationEntry {
   readonly permission?: string | undefined;
 }
 
-/** Admin navigation: platform administration (SLATE-301; content in SLATE-302). */
+/** Admin navigation: platform administration (SLATE-301 shell; modules in SLATE-302). */
 export const ADMIN_NAVIGATION: readonly ShellNavigationEntry[] = [
   { id: 'overview', href: '/', label: 'Overview' },
+  { id: 'tenants', href: '/tenants', label: 'Tenants', permission: 'tenants.read' },
   { id: 'users', href: '/users', label: 'Users', permission: 'users.read' },
-  { id: 'settings', href: '/settings', label: 'Settings', permission: 'settings.read' },
-  { id: 'jobs', href: '/jobs', label: 'Jobs', permission: 'jobs.read' },
-  { id: 'media', href: '/media', label: 'Media', permission: 'media.read' },
+  { id: 'features', href: '/features', label: 'Feature flags', permission: 'settings.read' },
+  { id: 'health', href: '/health', label: 'System health', permission: 'health.read' },
 ];
 
 /** Customer navigation: the tenant workspace (SLATE-301; content in SLATE-302). */

@@ -15,8 +15,25 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Directory containing the raw `.sql` migration files (this directory). */
-export const MIGRATIONS_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
+/**
+ * Directory containing the raw `.sql` migration files (this directory).
+ *
+ * Resolved defensively. A bundler that inlines this module into a server bundle
+ * (a Next.js app whose screens reach the database, for example) has no
+ * `import.meta.url`, and a build must not fail merely for *importing* the
+ * module: the value only matters when {@link loadMigrations} actually runs,
+ * which requires the real Node module layout.
+ */
+function defaultMigrationsDirectory(): string {
+  try {
+    return fileURLToPath(new URL('.', import.meta.url));
+  } catch {
+    // Bundled or non-ESM context; `loadMigrations` is not supported there.
+    return join(process.cwd(), 'src', 'migrations');
+  }
+}
+
+export const MIGRATIONS_DIRECTORY = defaultMigrationsDirectory();
 
 /** File-name convention: a four-digit ordinal, an underscore, a slug, `.sql`. */
 export const MIGRATION_FILE_NAME = /^(\d{4})_([a-z0-9_]+)\.sql$/;
