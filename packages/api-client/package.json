@@ -28,9 +28,9 @@
   "devDependencies": {
     "@slate/config": "*",
     "@slate/testing": "*",
-    "@types/node": "^24.10.1",
+    "@types/node": "^26.6.1",
     "@vitest/coverage-v8": "^5.0.1",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vitest": "^5.0.1"
   }
 }

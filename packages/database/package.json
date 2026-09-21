@@ -29,7 +29,7 @@
   "devDependencies": {
     "@slate/config": "*",
     "@slate/testing": "*",
-    "@types/node": "^24.10.1",
+    "@types/node": "^26.6.1",
     "@types/pg": "^8.6.11",
     "@vitest/coverage-v8": "^5.0.1",
     "vitest": "^5.0.1"
