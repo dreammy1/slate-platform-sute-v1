@@ -27,7 +27,7 @@
     "@slate/tenant-context": "*",
     "@slate/media": "*",
     "@slate/search": "*",
-    "kysely": "^0.29.6"
+    "kysely": "^0.29.7"
   },
   "devDependencies": {
     "@slate/config": "*",
