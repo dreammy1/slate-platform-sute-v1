@@ -20,7 +20,7 @@
     "@slate/database": "*",
     "@slate/jobs": "*",
     "@slate/observability": "*",
-    "kysely": "^0.29.6"
+    "kysely": "^0.29.7"
   },
   "devDependencies": {
     "@slate/config": "*",

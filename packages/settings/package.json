@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@slate/database": "*",
-    "kysely": "^0.29.6"
+    "kysely": "^0.29.7"
   },
   "devDependencies": {
     "@slate/config": "*",
